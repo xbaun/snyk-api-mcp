@@ -1,0 +1,23 @@
+{
+  "name": "snyk-api-mcp",
+  "version": "0.2.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node build/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}
