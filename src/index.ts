@@ -128,6 +128,30 @@ function normalizePathNode(node: any) {
   };
 }
 
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  return Array.from(
+    new Set(
+      values
+        .map((value) => (typeof value === "string" ? value.trim() : null))
+        .filter((value): value is string => Boolean(value)),
+    ),
+  );
+}
+
+function parseUpgradePackageValue(value: unknown): string[] {
+  if (typeof value === "string") {
+    return uniqueStrings(value.split(",").map((part) => part.trim()));
+  }
+
+  if (Array.isArray(value)) {
+    return uniqueStrings(
+      value.map((entry) => (typeof entry === "string" ? entry : null)),
+    );
+  }
+
+  return [];
+}
+
 function parsePackageFixVersions(description?: string | null): string[] {
   if (!description) return [];
 
@@ -148,6 +172,28 @@ function selectRelevantFixVersion(currentVersion: string | null, fixVersions: st
 
   const sameMajor = fixVersions.find((version) => version.startsWith(`${currentMajor}.`));
   return sameMajor ?? fixVersions[0] ?? null;
+}
+
+function extractIssueFixVersions(issue: any): string[] {
+  if (!issue) return [];
+
+  const coordinates = Array.isArray(issue?.coordinates) ? issue.coordinates : [];
+  const versions = coordinates.flatMap((coordinate: any) => {
+    const remedies = Array.isArray(coordinate?.remedies) ? coordinate.remedies : [];
+    return remedies.flatMap((remedy: any) => {
+      const details = remedy?.details ?? {};
+      return [
+        ...parseUpgradePackageValue(details?.upgradePackage),
+        ...parseUpgradePackageValue(details?.upgrade_package),
+        ...parsePackageFixVersions(remedy?.description ?? null),
+      ];
+    });
+  });
+
+  return uniqueStrings([
+    ...versions,
+    ...parsePackageFixVersions(issue?.description ?? null),
+  ]);
 }
 
 function summarizeIssuePath(path: any[]) {
@@ -222,15 +268,37 @@ async function snykGet(path: string, accept = "application/vnd.api+json") {
 function summarizeIssueV3(item: any) {
   const attrs = item?.attributes ?? {};
 
-  // Coordinates (Snyk Code issues)
+  // Coordinates (Snyk Code + Open Source package issues)
   const coordinates = Array.isArray(attrs.coordinates)
     ? attrs.coordinates.map((c: any) => {
         const reps = Array.isArray(c.representations)
           ? c.representations.map((r: any) => ({
+              id: r?.id,
+              type: r?.type,
+              identity: r?.identity,
+              packageName: r?.package_name ?? r?.packageName,
+              packageVersion: normalizeVersion(r?.package_version ?? r?.packageVersion),
+              purl: r?.purl,
               file: r?.sourceLocation?.file,
               commitId: r?.sourceLocation?.commit_id,
               region: r?.sourceLocation?.region,
             }))
+          : [];
+        const remedies = Array.isArray(c.remedies)
+          ? c.remedies.map((r: any) => {
+              const details = typeof r?.details === "object" && r?.details !== null
+                ? r.details
+                : {};
+              return {
+                id: r?.id,
+                type: r?.type,
+                description: r?.description,
+                details: {
+                  ...details,
+                  upgradePackage: details?.upgrade_package ?? details?.upgradePackage ?? null,
+                },
+              };
+            })
           : [];
         return {
           state: c.state,
@@ -239,6 +307,7 @@ function summarizeIssueV3(item: any) {
           isFixableManually: c.is_fixable_manually,
           isFixableSnyk: c.is_fixable_snyk,
           isFixableUpstream: c.is_fixable_upstream,
+          remedies,
           representations: reps,
         };
       })
@@ -906,9 +975,10 @@ server.registerTool(
       packageIssue = match ? summarizeIssueV3(match) : null;
     }
 
-    const remediationFixVersions = parsePackageFixVersions(
-      packageIssue?.description ?? restIssue?.description ?? null,
-    );
+    const remediationFixVersions = uniqueStrings([
+      ...extractIssueFixVersions(packageIssue),
+      ...extractIssueFixVersions(restIssue),
+    ]);
     const selectedPackageFixVersion = selectRelevantFixVersion(
       derivedPackageVersion,
       remediationFixVersions,
