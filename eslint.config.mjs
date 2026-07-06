@@ -62,11 +62,6 @@ export default defineConfig([
     },
   },
   {
-    ignores: [
-      '**/*.js',
-      '**/*.d.ts',
-      'dist/**',
-      'node_modules/**',
-    ],
+    ignores: ['**/*.js', '**/*.d.ts', 'dist/**', 'node_modules/**'],
   },
 ]);
