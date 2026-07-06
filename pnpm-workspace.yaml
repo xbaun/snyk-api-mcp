@@ -6,6 +6,7 @@ catalog:
 
 catalogs:
   build:
+    husky: ^9.1.7
     lint-staged: ^17.0.8
     tsx: ^4.22.4
     typescript: ^6.0.3

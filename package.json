@@ -21,7 +21,8 @@
     "dev": "pnpm exec tsx src/index.ts",
     "start": "node build/index.js",
     "lint": "pnpm exec eslint .",
-    "lint:fix": "pnpm exec eslint . --fix"
+    "lint:fix": "pnpm exec eslint . --fix",
+    "prepare": "husky"
   },
   "keywords": [],
   "author": "",
@@ -40,6 +41,7 @@
     "eslint-plugin-simple-import-sort": "catalog:eslint",
     "eslint-plugin-turbo": "catalog:eslint",
     "eslint-plugin-unused-imports": "catalog:eslint",
+    "husky": "catalog:build",
     "lint-staged": "catalog:build",
     "prettier": "catalog:eslint",
     "tsx": "catalog:build",
