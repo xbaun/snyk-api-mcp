@@ -5,11 +5,6 @@ catalog:
   zod: ^4.4.3
 
 catalogs:
-  build:
-    husky: ^9.1.7
-    lint-staged: ^17.0.8
-    tsx: ^4.22.4
-    typescript: ^6.0.3
   eslint:
     "@eslint/js": ^10.0.1
     eslint: ^10.6.0
@@ -21,6 +16,14 @@ catalogs:
     eslint-plugin-unused-imports: ^4.4.1
     prettier: ^3.9.4
     typescript-eslint: ^8.63.0
+  tooling:
+    '@commitlint/cli': ^21.2.0
+    '@commitlint/config-conventional': ^21.2.0
+    '@commitlint/types': ^21.2.0
+    husky: ^9.1.7
+    lint-staged: ^17.0.8
+    tsx: ^4.22.4
+    typescript: ^6.0.3
   types:
     "@types/node": ^26.1.0
 

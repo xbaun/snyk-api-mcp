@@ -32,6 +32,9 @@
     "zod": "catalog:"
   },
   "devDependencies": {
+    "@commitlint/cli": "catalog:tooling",
+    "@commitlint/config-conventional": "catalog:tooling",
+    "@commitlint/types": "catalog:tooling",
     "@eslint/js": "catalog:eslint",
     "@types/node": "catalog:types",
     "eslint": "catalog:eslint",
@@ -41,11 +44,11 @@
     "eslint-plugin-simple-import-sort": "catalog:eslint",
     "eslint-plugin-turbo": "catalog:eslint",
     "eslint-plugin-unused-imports": "catalog:eslint",
-    "husky": "catalog:build",
-    "lint-staged": "catalog:build",
+    "husky": "catalog:tooling",
+    "lint-staged": "catalog:tooling",
     "prettier": "catalog:eslint",
-    "tsx": "catalog:build",
-    "typescript": "catalog:build",
+    "tsx": "catalog:tooling",
+    "typescript": "catalog:tooling",
     "typescript-eslint": "catalog:eslint"
   }
 }
