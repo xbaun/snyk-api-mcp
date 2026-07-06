@@ -15,6 +15,7 @@ A generic [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) serve
 | `snyk_get_issue_detail` | Get full details of a single issue |
 | `snyk_get_package_issue_description` | Get all issues for a package (PURL) |
 | `snyk_get_project_issue_paths` | Get vulnerability data flow paths (Snyk v1 API) |
+| `snyk_get_project_issue_analysis` | Compose a UI-like OSS issue analysis from REST + v1 paths + package metadata |
 
 ### Typical Workflow
 
@@ -24,6 +25,11 @@ snyk_get_targets       → find target (repo) by display name
 snyk_get_projects      → list all projects for that target
 snyk_get_project_issues → get issues per project (filter by severity/status)
 ```
+
+Most tool inputs that end in `Id` expect Snyk UUIDs discovered from earlier calls. In particular:
+
+- `orgId` = Snyk organization UUID
+- `projectId` = Snyk project UUID
 
 ## Quick Start
 
@@ -169,6 +175,22 @@ Agent: snyk_get_issue_detail(orgId: "...", issueId: "a0f3809c-...")
 Agent: snyk_get_package_issue_description(orgId: "...", purl: "pkg:npm/axios@1.7.0")
 → All known vulnerabilities for that package version
 ```
+
+### 5. Reproduce the Snyk UI analysis for one OSS issue in one project
+
+```
+Agent: snyk_get_project_issue_analysis(
+  orgId: "...",
+  projectId: "...",
+  issueId: "SNYK-JS-ESBUILD-17750822"
+)
+→ REST issue metadata + introduced-through paths + package fix version + project remediation hint in one response
+```
+
+Semantics note:
+
+- `package.fixedIn` = the relevant fix version for the vulnerable package itself (when derivable from Snyk metadata)
+- `issueContext.remediation` = the best next project-level action inferred from the dependency path, e.g. upgrade a direct parent or re-lock transitives
 
 ---
 

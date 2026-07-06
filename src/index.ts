@@ -22,6 +22,170 @@ function encodePurl(purl: string): string {
   return encodeURIComponent(purl);
 }
 
+function looksLikeUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
+}
+
+function buildPurl(packageType: string, packageName: string, packageVersion: string): string {
+  return `pkg:${packageType}/${packageName}@${packageVersion}`;
+}
+
+function requireRestIssueUuid(toolName: string, issueId: string) {
+  if (looksLikeUuid(issueId)) return;
+
+  throw new Error(
+    `${toolName} requires a REST API issue UUID. ` +
+      "For project-scoped vulnerability identifiers like SNYK-JS-..., use " +
+      "snyk_get_project_issue_analysis or snyk_get_project_issue_paths.",
+  );
+}
+
+async function resolveProjectIssueIds(
+  orgId: string,
+  projectId: string,
+  issueId: string,
+  apiVersion: string,
+) {
+  let restIssue: any = null;
+  let v1IssueId = issueId;
+
+  if (looksLikeUuid(issueId)) {
+    const detail = await snykGet(
+      `/rest/orgs/${encodeURIComponent(orgId)}/issues/${encodeURIComponent(issueId)}?version=${encodeURIComponent(apiVersion)}`,
+    );
+    restIssue = detail?.data ? summarizeIssueV3(detail.data) : null;
+    v1IssueId = restIssue?.key ?? issueId;
+  } else {
+    const params = new URLSearchParams({
+      version: apiVersion,
+      limit: "100",
+      "scan_item.type": "project",
+      "scan_item.id": projectId,
+    });
+    const data = await snykGet(
+      `/rest/orgs/${encodeURIComponent(orgId)}/issues?${params.toString()}`,
+    );
+    const items = Array.isArray(data?.data) ? data.data : [];
+    const match = items.find((item: any) => item?.attributes?.key === issueId);
+    restIssue = match ? summarizeIssueV3(match) : null;
+  }
+
+  return {
+    restIssue,
+    restIssueId: restIssue?.id ?? (looksLikeUuid(issueId) ? issueId : null),
+    v1IssueId,
+  };
+}
+
+function derivePurl(
+  packageType: string,
+  purl?: string,
+  packageName?: string,
+  packageVersion?: string,
+) {
+  if (purl) return purl;
+  if (packageName && packageVersion) {
+    return buildPurl(packageType, packageName, packageVersion);
+  }
+  return null;
+}
+
+function requirePurlInput(
+  packageType: string,
+  purl?: string,
+  packageName?: string,
+  packageVersion?: string,
+) {
+  const resolvedPurl = derivePurl(packageType, purl, packageName, packageVersion);
+
+  if (resolvedPurl) return resolvedPurl;
+
+  throw new Error(
+    "Provide either purl or the combination packageType/packageName/packageVersion.",
+  );
+}
+
+function normalizeVersion(version: unknown): string | null {
+  if (typeof version !== "string") return null;
+  const trimmed = version.trim();
+  if (!trimmed || trimmed === "undefined") return null;
+  return trimmed;
+}
+
+function formatPackageLabel(name: unknown, version: unknown): string {
+  const resolvedName = typeof name === "string" && name.trim() ? name : "unknown";
+  const resolvedVersion = normalizeVersion(version);
+  return resolvedVersion ? `${resolvedName}@${resolvedVersion}` : resolvedName;
+}
+
+function normalizePathNode(node: any) {
+  return {
+    name: node?.name ?? "unknown",
+    version: normalizeVersion(node?.version),
+    fixVersion: normalizeVersion(node?.fixVersion),
+  };
+}
+
+function parsePackageFixVersions(description?: string | null): string[] {
+  if (!description) return [];
+
+  const remediationMatch = description.match(/Upgrade `[^`]+` to version (.+?) or higher\./is);
+  if (!remediationMatch?.[1]) return [];
+
+  return remediationMatch[1]
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function selectRelevantFixVersion(currentVersion: string | null, fixVersions: string[]): string | null {
+  if (!fixVersions.length) return null;
+
+  const currentMajor = currentVersion?.match(/^(\d+)\./)?.[1] ?? null;
+  if (!currentMajor) return fixVersions[0] ?? null;
+
+  const sameMajor = fixVersions.find((version) => version.startsWith(`${currentMajor}.`));
+  return sameMajor ?? fixVersions[0] ?? null;
+}
+
+function summarizeIssuePath(path: any[]) {
+  const nodes = (Array.isArray(path) ? path : []).map(normalizePathNode);
+  const first = nodes[0] ?? null;
+  const last = nodes[nodes.length - 1] ?? null;
+  const pathString = nodes
+    .map((node: any) => formatPackageLabel(node?.name, node?.version))
+    .join(" › ");
+
+  let remediation: string | null = null;
+  if (first?.fixVersion) {
+    remediation = first.fixVersion === first.version
+      ? `Re-lock transitive dependencies; direct dependency ${first.name}@${first.version} is already at the fixable parent version ${first.fixVersion}.`
+      : `Upgrade direct dependency ${first.name} from ${first.version ?? "unknown"} to ${first.fixVersion}.`;
+  }
+
+  return {
+    directDependency: first
+      ? {
+          name: first.name,
+          version: first.version,
+          fixVersion: first.fixVersion,
+        }
+      : null,
+    vulnerablePackage: last
+      ? {
+          name: last.name,
+          version: last.version,
+        }
+      : null,
+    pathLength: nodes.length,
+    path: nodes,
+    pathString,
+    remediation: remediation ?? "No remediation path available.",
+  };
+}
+
 async function snykGet(path: string, accept = "application/vnd.api+json") {
   const url = `${SNYK_API_BASE}${path}`;
 
@@ -140,6 +304,10 @@ server.registerTool(
       server: "snyk-api-mcp v0.2.0",
       description:
         "Snyk REST API bridge — find repositories, projects, and security vulnerabilities.",
+      identifierRules: {
+        orgId: "Always the Snyk organization UUID, never an org display name or slug.",
+        projectId: "Always the Snyk project UUID, never a project name, repo name, or display name.",
+      },
       recommendedWorkflow: [
         {
           step: 1,
@@ -153,21 +321,23 @@ server.registerTool(
           tool: "snyk_get_targets",
           input: "orgId, optional displayName (e.g. 'my-org/my-repo')",
           output: "target(s) with id, url, origin",
-          note: "A target is a GitHub repo, container image, etc.",
+          note: "A target is a GitHub repo, container image, etc. orgId must be the org UUID.",
         },
         {
           step: 3,
           tool: "snyk_get_projects",
           input: "orgId, optional targetId",
           output: "projects with id, name, type (pnpm/dockerfile/sast), status",
-          note: "A target can have multiple projects (e.g. each package.json is a separate pnpm project).",
+          note:
+            "A target can have multiple projects (e.g. each package.json is a separate pnpm project). Use the returned project id as projectId in later calls.",
         },
         {
           step: 4,
           tool: "snyk_get_project_issues",
           input: "orgId, projectId, optional severity/status/issueType/limit",
           output: "issues list with id, title, CVE, risk score, status",
-          note: "Use severity='critical' and status='open' to find the most urgent issues.",
+          note:
+            "Use severity='critical' and status='open' to find the most urgent issues. projectId must be the Snyk project UUID returned by snyk_get_projects.",
         },
       ],
       additionalTools: [
@@ -194,6 +364,7 @@ server.registerTool(
       ],
       tips: [
         "Always resolve the org ID first — most tools require it.",
+        "When a tool asks for orgId or projectId, pass the Snyk UUID returned by earlier tools, not a display name.",
         "Filter issues by severity+status to reduce noise (e.g. severity='critical', status='open').",
         "The same vulnerability (same Snyk key) may appear in multiple projects — that's expected.",
         "Use snyk_get_projects with targetId to efficiently list all projects for one repo.",
@@ -581,7 +752,7 @@ server.registerTool(
     items = items.slice(0, limit);
 
     const result = {
-      query: { orgId, issueType, severity, status, titleSearch, limit },
+      query: { orgId, issueType, severity, status, titleSearch, limit, apiVersion },
       matchCount: items.length,
       issues: items.map(summarizeIssueV3),
     };
@@ -626,14 +797,171 @@ server.registerTool(
   async ({ orgId, issueId, version }) => {
     const apiVersion = version || SNYK_API_VERSION;
 
+    requireRestIssueUuid("snyk_get_issue_detail", issueId);
+
     const data = await snykGet(
       `/rest/orgs/${encodeURIComponent(orgId)}/issues/${encodeURIComponent(issueId)}?version=${encodeURIComponent(apiVersion)}`,
     );
 
     const result = {
-      query: { orgId, issueId },
+      query: { orgId, issueId, apiVersion },
       issue: data?.data ? summarizeIssueV3(data.data) : null,
       raw: data,
+    };
+
+    return {
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+    };
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tool: snyk_get_project_issue_analysis
+// ---------------------------------------------------------------------------
+
+server.registerTool(
+  "snyk_get_project_issue_analysis",
+  {
+    description:
+      "Compose a UI-like analysis for a single open source issue in a specific project. " +
+      "Combines REST issue-instance metadata, v1 dependency paths, and package vulnerability metadata " +
+      "so agents can access introduced-through parents, the relevant vulnerable-package fix version, " +
+      "a project remediation hint, and detailed dependency paths in one response.",
+    inputSchema: {
+      orgId: z
+        .string()
+        .describe("Snyk Organization ID."),
+      projectId: z
+        .string()
+        .describe("Snyk Project ID in which the issue appears."),
+      issueId: z
+        .string()
+        .describe(
+          "Issue identifier. Prefer the v1 vulnerability ID (for example SNYK-JS-ESBUILD-17750822). REST UUID issue IDs are also accepted.",
+        ),
+      packageType: z
+        .string()
+        .optional()
+        .default("npm")
+        .describe("Package ecosystem for constructing a PURL when package metadata is derived from paths. Example: npm."),
+      packageName: z
+        .string()
+        .optional()
+        .describe("Optional package name override if it cannot be derived from the dependency path."),
+      packageVersion: z
+        .string()
+        .optional()
+        .describe("Optional package version override if it cannot be derived from the dependency path."),
+      version: z
+        .string()
+        .optional()
+        .describe("Snyk REST API version, e.g. 2026-03-25"),
+      perPage: z
+        .number()
+        .optional()
+        .default(1000)
+        .describe("How many project issue paths to request from v1 (max 1000)."),
+    },
+  },
+  async ({ orgId, projectId, issueId, packageType, packageName, packageVersion, version, perPage }) => {
+    const apiVersion = version || SNYK_API_VERSION;
+    const { restIssue, restIssueId, v1IssueId } = await resolveProjectIssueIds(
+      orgId,
+      projectId,
+      issueId,
+      apiVersion,
+    );
+
+    const pathData = await snykGet(
+      `/v1/org/${encodeURIComponent(orgId)}` +
+        `/project/${encodeURIComponent(projectId)}` +
+        `/issue/${encodeURIComponent(v1IssueId)}` +
+        `/paths?perPage=${encodeURIComponent(String(perPage))}&page=1`,
+      "application/json",
+    );
+
+    const rawPaths = Array.isArray(pathData?.paths) ? pathData.paths : [];
+    const pathSummaries = rawPaths.map(summarizeIssuePath);
+    const shortestPath = pathSummaries[0] ?? null;
+
+    const derivedPackageName = packageName ?? shortestPath?.vulnerablePackage?.name ?? null;
+    const derivedPackageVersion = packageVersion ?? shortestPath?.vulnerablePackage?.version ?? null;
+    const purl = derivePurl(
+      packageType,
+      undefined,
+      derivedPackageName ?? undefined,
+      derivedPackageVersion ?? undefined,
+    );
+
+    let packageIssue: any = null;
+    if (purl) {
+      const pkgData = await snykGet(
+        `/rest/orgs/${encodeURIComponent(orgId)}/packages/${encodePurl(purl)}/issues?version=${encodeURIComponent(apiVersion)}&limit=1000`,
+      );
+      const pkgItems = Array.isArray(pkgData?.data) ? pkgData.data : [];
+      const match = pkgItems.find((item: any) => {
+        const attrs = item?.attributes ?? {};
+        return item?.id === v1IssueId || attrs?.key === v1IssueId;
+      });
+      packageIssue = match ? summarizeIssueV3(match) : null;
+    }
+
+    const remediationFixVersions = parsePackageFixVersions(
+      packageIssue?.description ?? restIssue?.description ?? null,
+    );
+    const selectedPackageFixVersion = selectRelevantFixVersion(
+      derivedPackageVersion,
+      remediationFixVersions,
+    );
+
+    const directDependencies = Array.from(
+      new Set(
+        pathSummaries
+          .map((path: any) => path.directDependency)
+          .filter(Boolean)
+          .map((dep: any) => formatPackageLabel(dep.name, dep.version)),
+      ),
+    );
+
+    const result = {
+      query: {
+        orgId,
+        projectId,
+        issueId,
+        resolvedRestIssueId: restIssueId,
+        resolvedV1IssueId: v1IssueId,
+        apiVersion,
+      },
+      issue: {
+        restIssueId,
+        v1IssueId,
+        title: restIssue?.title ?? packageIssue?.title ?? null,
+        severity: restIssue?.effectiveSeverityLevel ?? packageIssue?.effectiveSeverityLevel ?? null,
+        status: restIssue?.status ?? null,
+        risk: restIssue?.risk ?? null,
+        problems: restIssue?.problems ?? packageIssue?.problems ?? [],
+        classes: restIssue?.classes ?? packageIssue?.classes ?? [],
+      },
+      package: {
+        name: derivedPackageName,
+        version: derivedPackageVersion,
+        purl,
+        fixedIn: selectedPackageFixVersion,
+        vulnerableRangeFromDb: packageIssue?.description?.match(/versions\s+(.+?)\n/i)?.[1] ?? null,
+      },
+      issueContext: {
+        introducedThrough: directDependencies,
+        remediation: shortestPath?.remediation ?? null,
+        exploitMaturity: restIssue?.risk?.factors?.exploitMaturity ?? null,
+        detailedPathsCount: pathSummaries.length,
+        shortestPath: shortestPath?.pathString ?? null,
+      },
+      overview: packageIssue?.description ?? restIssue?.description ?? null,
+      projectIssuePaths: {
+        snapshotId: pathData?.snapshotId ?? null,
+        total: pathData?.total ?? pathSummaries.length,
+        paths: pathSummaries,
+      },
     };
 
     return {
@@ -659,7 +987,21 @@ server.registerTool(
         .describe("Snyk Organization ID. Use snyk_resolve_org_id if you only have a slug."),
       purl: z
         .string()
+        .optional()
         .describe("Package URL, e.g. pkg:npm/lodash@4.17.15"),
+      packageType: z
+        .string()
+        .optional()
+        .default("npm")
+        .describe("Optional package ecosystem when constructing a PURL from name+version. Example: npm."),
+      packageName: z
+        .string()
+        .optional()
+        .describe("Optional package name when you prefer structured package inputs over a raw PURL."),
+      packageVersion: z
+        .string()
+        .optional()
+        .describe("Optional package version when you prefer structured package inputs over a raw PURL."),
       issueRef: z
         .string()
         .optional()
@@ -672,9 +1014,16 @@ server.registerTool(
         .describe("Optional Snyk REST API version, e.g. 2024-10-15"),
     },
   },
-  async ({ orgId, purl, issueRef, version }) => {
+  async ({ orgId, purl, packageType, packageName, packageVersion, issueRef, version }) => {
     const apiVersion = version || SNYK_API_VERSION;
-    const encodedPurl = encodePurl(purl);
+    const resolvedPurl = requirePurlInput(
+      packageType,
+      purl,
+      packageName,
+      packageVersion,
+    );
+
+    const encodedPurl = encodePurl(resolvedPurl);
 
     const data = await snykGet(
       `/rest/orgs/${encodeURIComponent(orgId)}/packages/${encodedPurl}/issues?version=${encodeURIComponent(apiVersion)}&limit=1000`,
@@ -699,7 +1048,15 @@ server.registerTool(
       : undefined;
 
     const result = {
-      query: { orgId, purl, issueRef, apiVersion },
+      query: {
+        orgId,
+        purl: resolvedPurl,
+        packageType,
+        packageName,
+        packageVersion,
+        issueRef,
+        apiVersion,
+      },
       matchedIssue: issue ? summarizeIssueV3(issue) : null,
       allIssuesCount: items.length,
       allIssues: items.length <= 50 ? items.map(summarizeIssueV3) : undefined,
@@ -721,7 +1078,7 @@ server.registerTool(
   {
     description:
       "Get the project issue paths for the last Snyk analysis. " +
-      "Uses V1 Snyk issue ID, e.g. SNYK-JS-LODASH-590103.",
+      "Accepts either a V1 Snyk issue ID (e.g. SNYK-JS-LODASH-590103) or a REST issue UUID and resolves it to the V1 issue ID automatically.",
     inputSchema: {
       orgId: z
         .string()
@@ -729,22 +1086,34 @@ server.registerTool(
       projectId: z.string().describe("Snyk Project ID"),
       issueId: z
         .string()
-        .describe("Snyk vulnerability issue ID, e.g. SNYK-JS-LODASH-590103"),
+        .describe("Snyk vulnerability issue ID (SNYK-...) or REST issue UUID."),
       page: z.number().optional().default(1),
       perPage: z.number().optional().default(1000),
+      version: z
+        .string()
+        .optional()
+        .describe("Snyk REST API version used when a REST issue UUID must be resolved to a V1 issue ID."),
     },
   },
-  async ({ orgId, projectId, issueId, page, perPage }) => {
+  async ({ orgId, projectId, issueId, page, perPage, version }) => {
+    const apiVersion = version || SNYK_API_VERSION;
+    const { restIssueId, v1IssueId } = await resolveProjectIssueIds(
+      orgId,
+      projectId,
+      issueId,
+      apiVersion,
+    );
+
     const data = await snykGet(
       `/v1/org/${encodeURIComponent(orgId)}` +
         `/project/${encodeURIComponent(projectId)}` +
-        `/issue/${encodeURIComponent(issueId)}` +
+        `/issue/${encodeURIComponent(v1IssueId)}` +
         `/paths?perPage=${encodeURIComponent(String(perPage))}&page=${encodeURIComponent(String(page))}`,
       "application/json",
     );
 
     const result = {
-      query: { orgId, projectId, issueId, page, perPage },
+      query: { orgId, projectId, issueId, resolvedRestIssueId: restIssueId, resolvedV1IssueId: v1IssueId, page, perPage, apiVersion },
       snapshotId: data?.snapshotId,
       total: data?.total,
       shortestPath: Array.isArray(data?.paths) ? data.paths[0] : undefined,
