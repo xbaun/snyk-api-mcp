@@ -1,23 +1,49 @@
 {
   "name": "snyk-api-mcp",
   "version": "0.2.0",
+  "description": "MCP server exposing the Snyk REST API as tools for AI coding agents.",
   "type": "module",
   "private": true,
+  "main": "build/index.js",
+  "bin": {
+    "snyk-api-mcp": "build/index.js"
+  },
+  "files": [
+    "build",
+    "README.md",
+    "package.json"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "build": "tsc",
-    "dev": "tsx src/index.ts",
-    "start": "node build/index.js"
+    "build": "pnpm exec tsc",
+    "dev": "pnpm exec tsx src/index.ts",
+    "start": "node build/index.js",
+    "lint": "pnpm exec eslint .",
+    "lint:fix": "pnpm exec eslint . --fix"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "zod": "^4.4.3"
+    "@modelcontextprotocol/sdk": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "@types/node": "^26.1.0",
-    "tsx": "^4.22.4",
-    "typescript": "^6.0.3"
+    "@eslint/js": "catalog:eslint",
+    "@types/node": "catalog:types",
+    "eslint": "catalog:eslint",
+    "eslint-config-prettier": "catalog:eslint",
+    "eslint-plugin-only-warn": "catalog:eslint",
+    "eslint-plugin-prettier": "catalog:eslint",
+    "eslint-plugin-simple-import-sort": "catalog:eslint",
+    "eslint-plugin-turbo": "catalog:eslint",
+    "eslint-plugin-unused-imports": "catalog:eslint",
+    "lint-staged": "catalog:build",
+    "prettier": "catalog:eslint",
+    "tsx": "catalog:build",
+    "typescript": "catalog:build",
+    "typescript-eslint": "catalog:eslint"
   }
 }

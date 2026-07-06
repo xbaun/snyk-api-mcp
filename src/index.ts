@@ -1,18 +1,89 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { z } from "zod";
+#!/usr/bin/env node
+
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
 
-const SNYK_TOKEN = process.env.SNYK_TOKEN;
-const SNYK_API_BASE = process.env.SNYK_API_BASE ?? "https://api.eu.snyk.io";
-const SNYK_API_VERSION = process.env.SNYK_API_VERSION ?? "2026-03-25";
-
-if (!SNYK_TOKEN) {
-  throw new Error("SNYK_TOKEN is required");
+function validate<T>(schema: z.ZodSchema<T>, input: unknown): T {
+  const result = schema.safeParse(input);
+  if (!result.success) {
+    throw new Error(
+      `Config validation failed:\n${result.error.issues.map((e) => `  ${e.path.join('.')}: ${e.message}`).join('\n')}`,
+    );
+  }
+  return result.data;
 }
+
+const env = validate(
+  z.object({
+    SNYK_TOKEN: z.string().min(1, 'SNYK_TOKEN is required'),
+    SNYK_API_BASE: z.url().default('https://api.eu.snyk.io'),
+    SNYK_API_VERSION: z.string().default('2026-03-25'),
+  }),
+  process.env,
+);
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type SnykItem = {
+  id: string;
+  attributes: Record<string, unknown>;
+  relationships?: Record<string, { data?: { id?: string; type?: string } }>;
+};
+
+type SnykPathNode = Record<string, unknown>;
+
+type NormalizedPathNode = {
+  name: string;
+  version: string | null;
+  fixVersion: string | null;
+};
+
+type PathSummary = {
+  directDependency: NormalizedPathNode | null;
+  vulnerablePackage: { name: string; version: string | null } | null;
+  pathLength: number;
+  path: NormalizedPathNode[];
+  pathString: string;
+  remediation: string;
+};
+
+type CoordinateSummary = {
+  state?: unknown;
+  createdAt?: unknown;
+  resolvedAt?: unknown;
+  isFixableManually?: unknown;
+  isFixableSnyk?: unknown;
+  isFixableUpstream?: unknown;
+  remedies: Array<Record<string, unknown>>;
+  representations: Array<Record<string, unknown>>;
+};
+
+type IssueSummary = {
+  id: string;
+  key?: string;
+  title?: string;
+  description?: string;
+  type?: string;
+  effectiveSeverityLevel?: string;
+  status?: string;
+  ignored?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  classes: Array<{ id?: string; type?: string; source?: string }>;
+  problems: Array<{ id?: string; type?: string; source?: string }>;
+  coordinates: CoordinateSummary[];
+  risk: { score?: unknown; model?: unknown; factors?: unknown };
+  resolution?: unknown;
+  scanItemId?: string;
+  organizationId?: string;
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -28,7 +99,11 @@ function looksLikeUuid(value: string): boolean {
   );
 }
 
-function buildPurl(packageType: string, packageName: string, packageVersion: string): string {
+function buildPurl(
+  packageType: string,
+  packageName: string,
+  packageVersion: string,
+): string {
   return `pkg:${packageType}/${packageName}@${packageVersion}`;
 }
 
@@ -37,8 +112,8 @@ function requireRestIssueUuid(toolName: string, issueId: string) {
 
   throw new Error(
     `${toolName} requires a REST API issue UUID. ` +
-      "For project-scoped vulnerability identifiers like SNYK-JS-..., use " +
-      "snyk_get_project_issue_analysis or snyk_get_project_issue_paths.",
+      'For project-scoped vulnerability identifiers like SNYK-JS-..., use ' +
+      'snyk_get_project_issue_analysis or snyk_get_project_issue_paths.',
   );
 }
 
@@ -48,7 +123,7 @@ async function resolveProjectIssueIds(
   issueId: string,
   apiVersion: string,
 ) {
-  let restIssue: any = null;
+  let restIssue: IssueSummary | null;
   let v1IssueId = issueId;
 
   if (looksLikeUuid(issueId)) {
@@ -60,15 +135,17 @@ async function resolveProjectIssueIds(
   } else {
     const params = new URLSearchParams({
       version: apiVersion,
-      limit: "100",
-      "scan_item.type": "project",
-      "scan_item.id": projectId,
+      limit: '100',
+      'scan_item.type': 'project',
+      'scan_item.id': projectId,
     });
     const data = await snykGet(
       `/rest/orgs/${encodeURIComponent(orgId)}/issues?${params.toString()}`,
     );
     const items = Array.isArray(data?.data) ? data.data : [];
-    const match = items.find((item: any) => item?.attributes?.key === issueId);
+    const match = items.find(
+      (item: SnykItem) => item?.attributes?.key === issueId,
+    );
     restIssue = match ? summarizeIssueV3(match) : null;
   }
 
@@ -98,31 +175,38 @@ function requirePurlInput(
   packageName?: string,
   packageVersion?: string,
 ) {
-  const resolvedPurl = derivePurl(packageType, purl, packageName, packageVersion);
+  const resolvedPurl = derivePurl(
+    packageType,
+    purl,
+    packageName,
+    packageVersion,
+  );
 
   if (resolvedPurl) return resolvedPurl;
 
   throw new Error(
-    "Provide either purl or the combination packageType/packageName/packageVersion.",
+    'Provide either purl or the combination packageType/packageName/packageVersion.',
   );
 }
 
 function normalizeVersion(version: unknown): string | null {
-  if (typeof version !== "string") return null;
+  if (typeof version !== 'string') return null;
   const trimmed = version.trim();
-  if (!trimmed || trimmed === "undefined") return null;
+  if (!trimmed || trimmed === 'undefined') return null;
   return trimmed;
 }
 
 function formatPackageLabel(name: unknown, version: unknown): string {
-  const resolvedName = typeof name === "string" && name.trim() ? name : "unknown";
+  const resolvedName =
+    typeof name === 'string' && name.trim() ? name : 'unknown';
   const resolvedVersion = normalizeVersion(version);
   return resolvedVersion ? `${resolvedName}@${resolvedVersion}` : resolvedName;
 }
 
-function normalizePathNode(node: any) {
+function normalizePathNode(node: SnykPathNode): NormalizedPathNode {
+  const rawName = node?.name;
   return {
-    name: node?.name ?? "unknown",
+    name: typeof rawName === 'string' && rawName.trim() ? rawName : 'unknown',
     version: normalizeVersion(node?.version),
     fixVersion: normalizeVersion(node?.fixVersion),
   };
@@ -132,20 +216,20 @@ function uniqueStrings(values: Array<string | null | undefined>): string[] {
   return Array.from(
     new Set(
       values
-        .map((value) => (typeof value === "string" ? value.trim() : null))
+        .map((value) => (typeof value === 'string' ? value.trim() : null))
         .filter((value): value is string => Boolean(value)),
     ),
   );
 }
 
 function parseUpgradePackageValue(value: unknown): string[] {
-  if (typeof value === "string") {
-    return uniqueStrings(value.split(",").map((part) => part.trim()));
+  if (typeof value === 'string') {
+    return uniqueStrings(value.split(',').map((part) => part.trim()));
   }
 
   if (Array.isArray(value)) {
     return uniqueStrings(
-      value.map((entry) => (typeof entry === "string" ? entry : null)),
+      value.map((entry) => (typeof entry === 'string' ? entry : null)),
     );
   }
 
@@ -155,37 +239,51 @@ function parseUpgradePackageValue(value: unknown): string[] {
 function parsePackageFixVersions(description?: string | null): string[] {
   if (!description) return [];
 
-  const remediationMatch = description.match(/Upgrade `[^`]+` to version (.+?) or higher\./is);
+  const remediationMatch = description.match(
+    /Upgrade `[^`]+` to version (.+?) or higher\./is,
+  );
   if (!remediationMatch?.[1]) return [];
 
   return remediationMatch[1]
-    .split(",")
+    .split(',')
     .map((part) => part.trim())
     .filter(Boolean);
 }
 
-function selectRelevantFixVersion(currentVersion: string | null, fixVersions: string[]): string | null {
+function selectRelevantFixVersion(
+  currentVersion: string | null,
+  fixVersions: string[],
+): string | null {
   if (!fixVersions.length) return null;
 
   const currentMajor = currentVersion?.match(/^(\d+)\./)?.[1] ?? null;
   if (!currentMajor) return fixVersions[0] ?? null;
 
-  const sameMajor = fixVersions.find((version) => version.startsWith(`${currentMajor}.`));
+  const sameMajor = fixVersions.find((version) =>
+    version.startsWith(`${currentMajor}.`),
+  );
   return sameMajor ?? fixVersions[0] ?? null;
 }
 
-function extractIssueFixVersions(issue: any): string[] {
+function extractIssueFixVersions(issue: IssueSummary | null): string[] {
   if (!issue) return [];
 
-  const coordinates = Array.isArray(issue?.coordinates) ? issue.coordinates : [];
-  const versions = coordinates.flatMap((coordinate: any) => {
-    const remedies = Array.isArray(coordinate?.remedies) ? coordinate.remedies : [];
-    return remedies.flatMap((remedy: any) => {
-      const details = remedy?.details ?? {};
+  const coordinates = Array.isArray(issue.coordinates) ? issue.coordinates : [];
+  const versions = coordinates.flatMap((coordinate: CoordinateSummary) => {
+    const remedies = Array.isArray(coordinate.remedies)
+      ? coordinate.remedies
+      : [];
+    return remedies.flatMap((remedy: Record<string, unknown>) => {
+      const details: Record<string, unknown> =
+        typeof remedy?.details === 'object' && remedy?.details !== null
+          ? (remedy.details as Record<string, unknown>)
+          : {};
       return [
-        ...parseUpgradePackageValue(details?.upgradePackage),
-        ...parseUpgradePackageValue(details?.upgrade_package),
-        ...parsePackageFixVersions(remedy?.description ?? null),
+        ...parseUpgradePackageValue(details['upgradePackage']),
+        ...parseUpgradePackageValue(details['upgrade_package']),
+        ...parsePackageFixVersions(
+          typeof remedy?.description === 'string' ? remedy.description : null,
+        ),
       ];
     });
   });
@@ -196,19 +294,22 @@ function extractIssueFixVersions(issue: any): string[] {
   ]);
 }
 
-function summarizeIssuePath(path: any[]) {
+function summarizeIssuePath(path: SnykPathNode[]): PathSummary {
   const nodes = (Array.isArray(path) ? path : []).map(normalizePathNode);
   const first = nodes[0] ?? null;
   const last = nodes[nodes.length - 1] ?? null;
   const pathString = nodes
-    .map((node: any) => formatPackageLabel(node?.name, node?.version))
-    .join(" › ");
+    .map((node: NormalizedPathNode) =>
+      formatPackageLabel(node.name, node.version),
+    )
+    .join(' › ');
 
   let remediation: string | null = null;
   if (first?.fixVersion) {
-    remediation = first.fixVersion === first.version
-      ? `Re-lock transitive dependencies; direct dependency ${first.name}@${first.version} is already at the fixable parent version ${first.fixVersion}.`
-      : `Upgrade direct dependency ${first.name} from ${first.version ?? "unknown"} to ${first.fixVersion}.`;
+    remediation =
+      first.fixVersion === first.version
+        ? `Re-lock transitive dependencies; direct dependency ${first.name}@${first.version} is already at the fixable parent version ${first.fixVersion}.`
+        : `Upgrade direct dependency ${first.name} from ${first.version ?? 'unknown'} to ${first.fixVersion}.`;
   }
 
   return {
@@ -228,21 +329,21 @@ function summarizeIssuePath(path: any[]) {
     pathLength: nodes.length,
     path: nodes,
     pathString,
-    remediation: remediation ?? "No remediation path available.",
+    remediation: remediation ?? 'No remediation path available.',
   };
 }
 
-async function snykGet(path: string, accept = "application/vnd.api+json") {
-  const url = `${SNYK_API_BASE}${path}`;
+async function snykGet(path: string, accept = 'application/vnd.api+json') {
+  const url = `${env.SNYK_API_BASE}${path}`;
 
   let response: Response;
   try {
     response = await fetch(url, {
-      method: "GET",
+      method: 'GET',
       headers: {
-        Authorization: `token ${SNYK_TOKEN}`,
+        Authorization: `token ${env.SNYK_TOKEN}`,
         Accept: accept,
-        "Content-Type": accept,
+        'Content-Type': accept,
       },
     });
   } catch (cause) {
@@ -265,81 +366,111 @@ async function snykGet(path: string, accept = "application/vnd.api+json") {
 }
 
 /** Summarize a Snyk REST API issue object (v3 /rest/orgs/{orgId}/issues). */
-function summarizeIssueV3(item: any) {
-  const attrs = item?.attributes ?? {};
+function summarizeIssueV3(item: SnykItem): IssueSummary {
+  const attrs: Record<string, unknown> = item?.attributes ?? {};
 
   // Coordinates (Snyk Code + Open Source package issues)
   const coordinates = Array.isArray(attrs.coordinates)
-    ? attrs.coordinates.map((c: any) => {
-        const reps = Array.isArray(c.representations)
-          ? c.representations.map((r: any) => ({
-              id: r?.id,
-              type: r?.type,
-              identity: r?.identity,
-              packageName: r?.package_name ?? r?.packageName,
-              packageVersion: normalizeVersion(r?.package_version ?? r?.packageVersion),
-              purl: r?.purl,
-              file: r?.sourceLocation?.file,
-              commitId: r?.sourceLocation?.commit_id,
-              region: r?.sourceLocation?.region,
-            }))
-          : [];
-        const remedies = Array.isArray(c.remedies)
-          ? c.remedies.map((r: any) => {
-              const details = typeof r?.details === "object" && r?.details !== null
-                ? r.details
-                : {};
-              return {
-                id: r?.id,
-                type: r?.type,
-                description: r?.description,
-                details: {
-                  ...details,
-                  upgradePackage: details?.upgrade_package ?? details?.upgradePackage ?? null,
+    ? (attrs.coordinates as Record<string, unknown>[]).map(
+        (c: Record<string, unknown>) => {
+          const reps = Array.isArray(c.representations)
+            ? (c.representations as Record<string, unknown>[]).map(
+                (r: Record<string, unknown>) => {
+                  const loc = r?.sourceLocation as
+                    Record<string, unknown> | undefined;
+                  return {
+                    id: r?.id as string | undefined,
+                    type: r?.type as string | undefined,
+                    identity: r?.identity as string | undefined,
+                    packageName: (r?.package_name ?? r?.packageName) as
+                      string | undefined,
+                    packageVersion: normalizeVersion(
+                      r?.package_version ?? r?.packageVersion,
+                    ),
+                    purl: r?.purl as string | undefined,
+                    file: loc?.file as string | undefined,
+                    commitId: loc?.commit_id as string | undefined,
+                    region: loc?.region as string | undefined,
+                  };
                 },
-              };
-            })
-          : [];
-        return {
-          state: c.state,
-          createdAt: c.created_at,
-          resolvedAt: c.last_resolved_at,
-          isFixableManually: c.is_fixable_manually,
-          isFixableSnyk: c.is_fixable_snyk,
-          isFixableUpstream: c.is_fixable_upstream,
-          remedies,
-          representations: reps,
-        };
-      })
+              )
+            : [];
+          const remedies = Array.isArray(c.remedies)
+            ? c.remedies.map((r: Record<string, unknown>) => {
+                const details =
+                  typeof r?.details === 'object' && r?.details !== null
+                    ? (r.details as Record<string, unknown>)
+                    : {};
+                return {
+                  id: r?.id,
+                  type: r?.type,
+                  description: r?.description,
+                  details: {
+                    ...details,
+                    upgradePackage:
+                      (details['upgrade_package'] as
+                        string | null | undefined) ??
+                      (details['upgradePackage'] as
+                        string | null | undefined) ??
+                      null,
+                  },
+                };
+              })
+            : [];
+          return {
+            state: c.state,
+            createdAt: c.created_at,
+            resolvedAt: c.last_resolved_at,
+            isFixableManually: c.is_fixable_manually,
+            isFixableSnyk: c.is_fixable_snyk,
+            isFixableUpstream: c.is_fixable_upstream,
+            remedies,
+            representations: reps,
+          };
+        },
+      )
     : [];
 
   // Risk score
-  const risk = attrs.risk ?? {};
+  const risk = (attrs.risk ?? {}) as Record<string, unknown>;
   const classes = Array.isArray(attrs.classes)
-    ? attrs.classes.map((c: any) => ({ id: c.id, type: c.type, source: c.source }))
+    ? (attrs.classes as Record<string, unknown>[]).map(
+        (c: Record<string, unknown>) => ({
+          id: c.id as string | undefined,
+          type: c.type as string | undefined,
+          source: c.source as string | undefined,
+        }),
+      )
     : [];
   const problems = Array.isArray(attrs.problems)
-    ? attrs.problems.map((p: any) => ({ id: p.id, type: p.type, source: p.source }))
+    ? (attrs.problems as Record<string, unknown>[]).map(
+        (p: Record<string, unknown>) => ({
+          id: p.id as string | undefined,
+          type: p.type as string | undefined,
+          source: p.source as string | undefined,
+        }),
+      )
     : [];
 
   return {
     id: item?.id,
-    key: attrs.key,
-    title: attrs.title,
-    description: attrs.description,
-    type: attrs.type, // "code" or "package"
-    effectiveSeverityLevel: attrs.effective_severity_level,
-    status: attrs.status,
-    ignored: attrs.ignored,
-    createdAt: attrs.created_at,
-    updatedAt: attrs.updated_at,
+    key: attrs.key as string | undefined,
+    title: attrs.title as string | undefined,
+    description: attrs.description as string | undefined,
+    type: attrs.type as string | undefined,
+    effectiveSeverityLevel: attrs.effective_severity_level as
+      string | undefined,
+    status: attrs.status as string | undefined,
+    ignored: attrs.ignored as boolean | undefined,
+    createdAt: attrs.created_at as string | undefined,
+    updatedAt: attrs.updated_at as string | undefined,
     classes,
     problems,
-    coordinates,
+    coordinates: coordinates as CoordinateSummary[],
     risk: {
-      score: risk?.score?.value,
-      model: risk?.score?.model,
-      factors: risk?.factors,
+      score: (risk['score'] as Record<string, unknown> | undefined)?.value,
+      model: (risk['score'] as Record<string, unknown> | undefined)?.model,
+      factors: risk['factors'],
     },
     resolution: attrs.resolution,
     scanItemId: item?.relationships?.scan_item?.data?.id,
@@ -352,8 +483,8 @@ function summarizeIssueV3(item: any) {
 // ---------------------------------------------------------------------------
 
 const server = new McpServer({
-  name: "snyk-api-mcp",
-  version: "0.2.0",
+  name: 'snyk-api-mcp',
+  version: '0.2.0',
 });
 
 // ---------------------------------------------------------------------------
@@ -361,87 +492,87 @@ const server = new McpServer({
 // ---------------------------------------------------------------------------
 
 server.registerTool(
-  "snyk_onboarding",
+  'snyk_onboarding',
   {
     description:
-      "Get an overview of all available Snyk tools, their recommended workflow, " +
-      "and best practices. Call this first when onboarding to understand how to use the server.",
+      'Get an overview of all available Snyk tools, their recommended workflow, ' +
+      'and best practices. Call this first when onboarding to understand how to use the server.',
     inputSchema: {},
   },
   async () => {
     const guide = {
-      server: "snyk-api-mcp v0.2.0",
+      server: 'snyk-api-mcp v0.2.0',
       description:
-        "Snyk REST API bridge — find repositories, projects, and security vulnerabilities.",
+        'Snyk REST API bridge — find repositories, projects, and security vulnerabilities.',
       identifierRules: {
-        orgId: "Always the Snyk organization UUID, never an org display name or slug.",
-        projectId: "Always the Snyk project UUID, never a project name, repo name, or display name.",
+        orgId:
+          'Always the Snyk organization UUID, never an org display name or slug.',
+        projectId:
+          'Always the Snyk project UUID, never a project name, repo name, or display name.',
       },
       recommendedWorkflow: [
         {
           step: 1,
-          tool: "snyk_resolve_org_id",
+          tool: 'snyk_resolve_org_id',
           input: "orgSlug (e.g. 'my-snyk-org')",
-          output: "orgId (UUID)",
-          note: "You can also use the org UUID directly if you already know it.",
+          output: 'orgId (UUID)',
+          note: 'You can also use the org UUID directly if you already know it.',
         },
         {
           step: 2,
-          tool: "snyk_get_targets",
+          tool: 'snyk_get_targets',
           input: "orgId, optional displayName (e.g. 'my-org/my-repo')",
-          output: "target(s) with id, url, origin",
-          note: "A target is a GitHub repo, container image, etc. orgId must be the org UUID.",
+          output: 'target(s) with id, url, origin',
+          note: 'A target is a GitHub repo, container image, etc. orgId must be the org UUID.',
         },
         {
           step: 3,
-          tool: "snyk_get_projects",
-          input: "orgId, optional targetId",
-          output: "projects with id, name, type (pnpm/dockerfile/sast), status",
-          note:
-            "A target can have multiple projects (e.g. each package.json is a separate pnpm project). Use the returned project id as projectId in later calls.",
+          tool: 'snyk_get_projects',
+          input: 'orgId, optional targetId',
+          output: 'projects with id, name, type (pnpm/dockerfile/sast), status',
+          note: 'A target can have multiple projects (e.g. each package.json is a separate pnpm project). Use the returned project id as projectId in later calls.',
         },
         {
           step: 4,
-          tool: "snyk_get_project_issues",
-          input: "orgId, projectId, optional severity/status/issueType/limit",
-          output: "issues list with id, title, CVE, risk score, status",
-          note:
-            "Use severity='critical' and status='open' to find the most urgent issues. projectId must be the Snyk project UUID returned by snyk_get_projects.",
+          tool: 'snyk_get_project_issues',
+          input: 'orgId, projectId, optional severity/status/issueType/limit',
+          output: 'issues list with id, title, CVE, risk score, status',
+          note: "Use severity='critical' and status='open' to find the most urgent issues. projectId must be the Snyk project UUID returned by snyk_get_projects.",
         },
       ],
       additionalTools: [
         {
-          tool: "snyk_list_org_issues",
+          tool: 'snyk_list_org_issues',
           description:
-            "Search all issues across the entire org. Supports titleSearch for keyword matching.",
+            'Search all issues across the entire org. Supports titleSearch for keyword matching.',
         },
         {
-          tool: "snyk_get_issue_detail",
+          tool: 'snyk_get_issue_detail',
           description:
-            "Get full detail for a single issue (by REST API UUID, not the web UI fragment ID).",
+            'Get full detail for a single issue (by REST API UUID, not the web UI fragment ID).',
         },
         {
-          tool: "snyk_get_package_issue_description",
+          tool: 'snyk_get_package_issue_description',
           description:
-            "Look up all known vulnerabilities for a package by PURL (e.g. pkg:npm/axios@1.7.0).",
+            'Look up all known vulnerabilities for a package by PURL (e.g. pkg:npm/axios@1.7.0).',
         },
         {
-          tool: "snyk_get_project_issue_paths",
+          tool: 'snyk_get_project_issue_paths',
           description:
-            "Get the data flow path for a vulnerability in a project (v1 API).",
+            'Get the data flow path for a vulnerability in a project (v1 API).',
         },
       ],
       tips: [
-        "Always resolve the org ID first — most tools require it.",
-        "When a tool asks for orgId or projectId, pass the Snyk UUID returned by earlier tools, not a display name.",
+        'Always resolve the org ID first — most tools require it.',
+        'When a tool asks for orgId or projectId, pass the Snyk UUID returned by earlier tools, not a display name.',
         "Filter issues by severity+status to reduce noise (e.g. severity='critical', status='open').",
         "The same vulnerability (same Snyk key) may appear in multiple projects — that's expected.",
-        "Use snyk_get_projects with targetId to efficiently list all projects for one repo.",
+        'Use snyk_get_projects with targetId to efficiently list all projects for one repo.',
       ],
     };
 
     return {
-      content: [{ type: "text", text: JSON.stringify(guide, null, 2) }],
+      content: [{ type: 'text', text: JSON.stringify(guide, null, 2) }],
     };
   },
 );
@@ -451,11 +582,11 @@ server.registerTool(
 // ---------------------------------------------------------------------------
 
 server.registerTool(
-  "snyk_resolve_org_id",
+  'snyk_resolve_org_id',
   {
     description:
       "Resolve a Snyk organization slug (e.g. 'my-snyk-org') or partial name to its UUID. " +
-      "Use this before calling tools that require an orgId when you only have a human-readable org name.",
+      'Use this before calling tools that require an orgId when you only have a human-readable org name.',
     inputSchema: {
       orgSlug: z
         .string()
@@ -466,31 +597,33 @@ server.registerTool(
   },
   async ({ orgSlug }) => {
     const data = await snykGet(
-      `/rest/orgs?version=${encodeURIComponent(SNYK_API_VERSION)}&limit=100`,
+      `/rest/orgs?version=${encodeURIComponent(env.SNYK_API_VERSION)}&limit=100`,
     );
     const orgs = Array.isArray(data?.data) ? data.data : [];
     const lower = orgSlug.toLowerCase();
 
     const matches = orgs
-      .filter((org: any) => {
-        const slug: string = org?.attributes?.slug ?? "";
-        const name: string = org?.attributes?.name ?? "";
+      .filter((org: SnykItem) => {
+        const slug = (org?.attributes?.slug as string) ?? '';
+        const name = (org?.attributes?.name as string) ?? '';
         return (
           slug.toLowerCase().includes(lower) ||
           name.toLowerCase().includes(lower)
         );
       })
-      .map((org: any) => ({
+      .map((org: SnykItem) => ({
         id: org.id,
         slug: org?.attributes?.slug,
         name: org?.attributes?.name,
-        groupName: org?.attributes?.group?.name,
+        groupName: (
+          org?.attributes?.group as Record<string, unknown> | undefined
+        )?.name,
       }));
 
     return {
       content: [
         {
-          type: "text",
+          type: 'text',
           text: JSON.stringify(
             { query: orgSlug, matchCount: matches.length, matches },
             null,
@@ -507,45 +640,45 @@ server.registerTool(
 // ---------------------------------------------------------------------------
 
 server.registerTool(
-  "snyk_get_projects",
+  'snyk_get_projects',
   {
     description:
-      "List all Snyk projects for an organization, optionally filtered by target_id. " +
-      "Use this after snyk_get_targets to get full project details (id, name, type, origin, status) " +
-      "for a specific target/repository.",
+      'List all Snyk projects for an organization, optionally filtered by target_id. ' +
+      'Use this after snyk_get_targets to get full project details (id, name, type, origin, status) ' +
+      'for a specific target/repository.',
     inputSchema: {
       orgId: z
         .string()
         .describe(
-          "Snyk organization UUID. Use snyk_resolve_org_id first if you only have a slug.",
+          'Snyk organization UUID. Use snyk_resolve_org_id first if you only have a slug.',
         ),
       targetId: z
         .string()
         .optional()
         .describe(
-          "Filter projects by target ID (UUID). Use snyk_get_targets first to find the target ID for a repository.",
+          'Filter projects by target ID (UUID). Use snyk_get_targets first to find the target ID for a repository.',
         ),
       version: z
         .string()
         .optional()
-        .describe("Snyk REST API version, e.g. 2026-03-25"),
+        .describe('Snyk REST API version, e.g. 2026-03-25'),
     },
   },
   async ({ orgId, targetId, version }) => {
-    const apiVersion = version || SNYK_API_VERSION;
+    const apiVersion = version || env.SNYK_API_VERSION;
 
     const params = new URLSearchParams({
       version: apiVersion,
-      limit: "100",
+      limit: '100',
     });
-    if (targetId) params.set("target_id", targetId);
+    if (targetId) params.set('target_id', targetId);
 
     const data = await snykGet(
       `/rest/orgs/${encodeURIComponent(orgId)}/projects?${params.toString()}`,
     );
 
     const projects = (Array.isArray(data?.data) ? data.data : []).map(
-      (p: any) => ({
+      (p: SnykItem) => ({
         id: p.id,
         name: p?.attributes?.name,
         type: p?.attributes?.type,
@@ -559,7 +692,7 @@ server.registerTool(
     return {
       content: [
         {
-          type: "text",
+          type: 'text',
           text: JSON.stringify(
             {
               query: { orgId, targetId, apiVersion },
@@ -580,46 +713,46 @@ server.registerTool(
 // ---------------------------------------------------------------------------
 
 server.registerTool(
-  "snyk_get_targets",
+  'snyk_get_targets',
   {
     description:
-      "List Snyk targets (repositories/containers) for an organization, " +
-      "optionally filtered by display name. " +
-      "Use snyk_get_projects to list all projects for a specific target.",
+      'List Snyk targets (repositories/containers) for an organization, ' +
+      'optionally filtered by display name. ' +
+      'Use snyk_get_projects to list all projects for a specific target.',
     inputSchema: {
       orgId: z
         .string()
         .describe(
-          "Snyk organization UUID. Use snyk_resolve_org_id first if you only have a slug.",
+          'Snyk organization UUID. Use snyk_resolve_org_id first if you only have a slug.',
         ),
       displayName: z
         .string()
         .optional()
         .describe(
-          "Filter targets by display name (URL-encoded). " +
+          'Filter targets by display name (URL-encoded). ' +
             "E.g. 'my-github-org/my-repo' for the target with that display name.",
         ),
       version: z
         .string()
         .optional()
-        .describe("Snyk REST API version, e.g. 2026-03-25"),
+        .describe('Snyk REST API version, e.g. 2026-03-25'),
     },
   },
   async ({ orgId, displayName, version }) => {
-    const apiVersion = version || SNYK_API_VERSION;
+    const apiVersion = version || env.SNYK_API_VERSION;
 
     const params = new URLSearchParams({
       version: apiVersion,
-      limit: "100",
+      limit: '100',
     });
-    if (displayName) params.set("display_name", displayName);
+    if (displayName) params.set('display_name', displayName);
 
     const data = await snykGet(
       `/rest/orgs/${encodeURIComponent(orgId)}/targets?${params.toString()}`,
     );
 
     const targets = (Array.isArray(data?.data) ? data.data : []).map(
-      (t: any) => ({
+      (t: SnykItem) => ({
         id: t.id,
         displayName: t?.attributes?.display_name,
         url: t?.attributes?.url,
@@ -632,7 +765,7 @@ server.registerTool(
     return {
       content: [
         {
-          type: "text",
+          type: 'text',
           text: JSON.stringify(
             {
               query: { orgId, displayName, apiVersion },
@@ -653,65 +786,67 @@ server.registerTool(
 // ---------------------------------------------------------------------------
 
 server.registerTool(
-  "snyk_get_project_issues",
+  'snyk_get_project_issues',
   {
     description:
-      "List all Snyk issues for a specific project (by project ID). " +
+      'List all Snyk issues for a specific project (by project ID). ' +
       "Supports filtering by type ('code' or 'package'), severity, and status. " +
-      "Use snyk_get_targets and snyk_get_projects first to find the project ID for a given repository.",
+      'Use snyk_get_targets and snyk_get_projects first to find the project ID for a given repository.',
     inputSchema: {
       orgId: z
         .string()
         .describe(
-          "Snyk organization UUID. Use snyk_resolve_org_id first if you only have a slug.",
+          'Snyk organization UUID. Use snyk_resolve_org_id first if you only have a slug.',
         ),
       projectId: z
         .string()
         .describe(
-          "Snyk project ID (UUID). Use snyk_get_targets to discover project IDs for a target.",
+          'Snyk project ID (UUID). Use snyk_get_targets to discover project IDs for a target.',
         ),
       issueType: z
-        .enum(["code", "package", "all"])
+        .enum(['code', 'package', 'all'])
         .optional()
-        .default("all")
-        .describe("Filter by issue type: 'code' (Snyk Code), 'package' (open source), or 'all'."),
+        .default('all')
+        .describe(
+          "Filter by issue type: 'code' (Snyk Code), 'package' (open source), or 'all'.",
+        ),
       severity: z
-        .enum(["low", "medium", "high", "critical"])
+        .enum(['low', 'medium', 'high', 'critical'])
         .optional()
-        .describe("Filter by effective severity level."),
+        .describe('Filter by effective severity level.'),
       status: z
-        .enum(["open", "resolved", "ignored"])
+        .enum(['open', 'resolved', 'ignored'])
         .optional()
-        .describe("Filter by issue status."),
+        .describe('Filter by issue status.'),
       limit: z
         .number()
         .optional()
         .default(100)
-        .describe("Max results to return (1-100)."),
+        .describe('Max results to return (1-100).'),
       version: z
         .string()
         .optional()
-        .describe("Snyk REST API version, e.g. 2026-03-25"),
+        .describe('Snyk REST API version, e.g. 2026-03-25'),
     },
   },
   async ({ orgId, projectId, issueType, severity, status, limit, version }) => {
-    const apiVersion = version || SNYK_API_VERSION;
+    const apiVersion = version || env.SNYK_API_VERSION;
     const API_PAGE_SIZE = 100;
 
     const params = new URLSearchParams({
       version: apiVersion,
       limit: String(API_PAGE_SIZE),
-      "scan_item.type": "project",
-      "scan_item.id": projectId,
+      'scan_item.type': 'project',
+      'scan_item.id': projectId,
     });
 
     let snykType: string | undefined;
-    if (issueType === "code") snykType = "code";
-    else if (issueType === "package") snykType = "package";
+    if (issueType === 'code') snykType = 'code';
+    else if (issueType === 'package') snykType = 'package';
 
-    if (snykType) params.set("type", snykType);
-    if (severity) params.set("effective_severity_level", severity);
-    if (status) params.set("status", status);
+    if (snykType) params.set('type', snykType);
+    if (severity) params.set('effective_severity_level', severity);
+    if (status) params.set('status', status);
 
     const data = await snykGet(
       `/rest/orgs/${encodeURIComponent(orgId)}/issues?${params.toString()}`,
@@ -721,13 +856,21 @@ server.registerTool(
     items = items.slice(0, limit);
 
     const result = {
-      query: { orgId, projectId, issueType, severity, status, limit, apiVersion },
+      query: {
+        orgId,
+        projectId,
+        issueType,
+        severity,
+        status,
+        limit,
+        apiVersion,
+      },
       matchCount: items.length,
       issues: items.map(summarizeIssueV3),
     };
 
     return {
-      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
     };
   },
 );
@@ -737,50 +880,60 @@ server.registerTool(
 // ---------------------------------------------------------------------------
 
 server.registerTool(
-  "snyk_list_org_issues",
+  'snyk_list_org_issues',
   {
     description:
       "List issues for a Snyk organization. Supports filtering by type ('code' or 'package'), " +
-      "severity, status, and free-text title search. Use this to find Snyk Code issues (type=code) " +
+      'severity, status, and free-text title search. Use this to find Snyk Code issues (type=code) ' +
       "or to discover issues when you only have a title keyword (e.g. 'Hardcoded Secret').",
     inputSchema: {
       orgId: z
         .string()
         .describe(
-          "Snyk organization UUID. Use snyk_resolve_org_id first if you only have a slug.",
+          'Snyk organization UUID. Use snyk_resolve_org_id first if you only have a slug.',
         ),
       issueType: z
-        .enum(["code", "package", "all"])
+        .enum(['code', 'package', 'all'])
         .optional()
-        .default("all")
-        .describe("Filter by issue type: 'code' (Snyk Code), 'package' (open source), or 'all'."),
+        .default('all')
+        .describe(
+          "Filter by issue type: 'code' (Snyk Code), 'package' (open source), or 'all'.",
+        ),
       severity: z
-        .enum(["low", "medium", "high", "critical"])
+        .enum(['low', 'medium', 'high', 'critical'])
         .optional()
-        .describe("Filter by effective severity level."),
+        .describe('Filter by effective severity level.'),
       status: z
-        .enum(["open", "resolved", "ignored"])
+        .enum(['open', 'resolved', 'ignored'])
         .optional()
-        .describe("Filter by issue status."),
+        .describe('Filter by issue status.'),
       titleSearch: z
         .string()
         .optional()
         .describe(
-          "Free-text search on issue title (client-side substring match). Case-insensitive.",
+          'Free-text search on issue title (client-side substring match). Case-insensitive.',
         ),
       limit: z
         .number()
         .optional()
         .default(100)
-        .describe("Max results to return (1-100)."),
+        .describe('Max results to return (1-100).'),
       version: z
         .string()
         .optional()
-        .describe("Snyk REST API version, e.g. 2024-10-15"),
+        .describe('Snyk REST API version, e.g. 2024-10-15'),
     },
   },
-  async ({ orgId, issueType, severity, status, titleSearch, limit, version }) => {
-    const apiVersion = version || SNYK_API_VERSION;
+  async ({
+    orgId,
+    issueType,
+    severity,
+    status,
+    titleSearch,
+    limit,
+    version,
+  }) => {
+    const apiVersion = version || env.SNYK_API_VERSION;
 
     // Snyk REST API only accepts specific limit values (e.g. 10, 100).
     // Always fetch the maximum and then client-side truncate.
@@ -794,12 +947,12 @@ server.registerTool(
 
     // Map type filter
     let snykType: string | undefined;
-    if (issueType === "code") snykType = "code";
-    else if (issueType === "package") snykType = "package";
+    if (issueType === 'code') snykType = 'code';
+    else if (issueType === 'package') snykType = 'package';
 
-    if (snykType) params.set("type", snykType);
-    if (severity) params.set("effective_severity_level", severity);
-    if (status) params.set("status", status);
+    if (snykType) params.set('type', snykType);
+    if (severity) params.set('effective_severity_level', severity);
+    if (status) params.set('status', status);
 
     const data = await snykGet(
       `/rest/orgs/${encodeURIComponent(orgId)}/issues?${params.toString()}`,
@@ -810,10 +963,13 @@ server.registerTool(
     // Client-side title search
     if (titleSearch) {
       const lower = titleSearch.toLowerCase();
-      items = items.filter((item: any) => {
-        const title: string = item?.attributes?.title ?? "";
-        const description: string = item?.attributes?.description ?? "";
-        return title.toLowerCase().includes(lower) || description.toLowerCase().includes(lower);
+      items = items.filter((item: SnykItem) => {
+        const title = (item?.attributes?.title as string) ?? '';
+        const description = (item?.attributes?.description as string) ?? '';
+        return (
+          title.toLowerCase().includes(lower) ||
+          description.toLowerCase().includes(lower)
+        );
       });
     }
 
@@ -821,13 +977,21 @@ server.registerTool(
     items = items.slice(0, limit);
 
     const result = {
-      query: { orgId, issueType, severity, status, titleSearch, limit, apiVersion },
+      query: {
+        orgId,
+        issueType,
+        severity,
+        status,
+        titleSearch,
+        limit,
+        apiVersion,
+      },
       matchCount: items.length,
       issues: items.map(summarizeIssueV3),
     };
 
     return {
-      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
     };
   },
 );
@@ -837,36 +1001,36 @@ server.registerTool(
 // ---------------------------------------------------------------------------
 
 server.registerTool(
-  "snyk_get_issue_detail",
+  'snyk_get_issue_detail',
   {
     description:
-      "Get full details of a single Snyk issue by its REST API issue ID " +
+      'Get full details of a single Snyk issue by its REST API issue ID ' +
       "(e.g. '61b1f9fa-0bfc-469e-93e6-ea31a53e7412'). " +
-      "Use snyk_list_org_issues first to discover the issue ID from a title keyword. " +
+      'Use snyk_list_org_issues first to discover the issue ID from a title keyword. ' +
       "NOTE: The fragment ID from a Snyk web UI URL (like '#issue-2f30d999-...') is NOT " +
-      "a REST API issue ID — you must find the real ID via snyk_list_org_issues.",
+      'a REST API issue ID — you must find the real ID via snyk_list_org_issues.',
     inputSchema: {
       orgId: z
         .string()
         .describe(
-          "Snyk organization UUID. Use snyk_resolve_org_id first if you only have a slug.",
+          'Snyk organization UUID. Use snyk_resolve_org_id first if you only have a slug.',
         ),
       issueId: z
         .string()
         .describe(
           "Snyk REST API issue ID (UUID), e.g. '61b1f9fa-0bfc-469e-93e6-ea31a53e7412'. " +
-            "NOT the fragment from a web UI URL.",
+            'NOT the fragment from a web UI URL.',
         ),
       version: z
         .string()
         .optional()
-        .describe("Snyk REST API version, e.g. 2024-10-15"),
+        .describe('Snyk REST API version, e.g. 2024-10-15'),
     },
   },
   async ({ orgId, issueId, version }) => {
-    const apiVersion = version || SNYK_API_VERSION;
+    const apiVersion = version || env.SNYK_API_VERSION;
 
-    requireRestIssueUuid("snyk_get_issue_detail", issueId);
+    requireRestIssueUuid('snyk_get_issue_detail', issueId);
 
     const data = await snykGet(
       `/rest/orgs/${encodeURIComponent(orgId)}/issues/${encodeURIComponent(issueId)}?version=${encodeURIComponent(apiVersion)}`,
@@ -879,7 +1043,7 @@ server.registerTool(
     };
 
     return {
-      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
     };
   },
 );
@@ -889,51 +1053,66 @@ server.registerTool(
 // ---------------------------------------------------------------------------
 
 server.registerTool(
-  "snyk_get_project_issue_analysis",
+  'snyk_get_project_issue_analysis',
   {
     description:
-      "Compose a UI-like analysis for a single open source issue in a specific project. " +
-      "Combines REST issue-instance metadata, v1 dependency paths, and package vulnerability metadata " +
-      "so agents can access introduced-through parents, the relevant vulnerable-package fix version, " +
-      "a project remediation hint, and detailed dependency paths in one response.",
+      'Compose a UI-like analysis for a single open source issue in a specific project. ' +
+      'Combines REST issue-instance metadata, v1 dependency paths, and package vulnerability metadata ' +
+      'so agents can access introduced-through parents, the relevant vulnerable-package fix version, ' +
+      'a project remediation hint, and detailed dependency paths in one response.',
     inputSchema: {
-      orgId: z
-        .string()
-        .describe("Snyk Organization ID."),
+      orgId: z.string().describe('Snyk Organization ID.'),
       projectId: z
         .string()
-        .describe("Snyk Project ID in which the issue appears."),
+        .describe('Snyk Project ID in which the issue appears.'),
       issueId: z
         .string()
         .describe(
-          "Issue identifier. Prefer the v1 vulnerability ID (for example SNYK-JS-ESBUILD-17750822). REST UUID issue IDs are also accepted.",
+          'Issue identifier. Prefer the v1 vulnerability ID (for example SNYK-JS-ESBUILD-17750822). REST UUID issue IDs are also accepted.',
         ),
       packageType: z
         .string()
         .optional()
-        .default("npm")
-        .describe("Package ecosystem for constructing a PURL when package metadata is derived from paths. Example: npm."),
+        .default('npm')
+        .describe(
+          'Package ecosystem for constructing a PURL when package metadata is derived from paths. Example: npm.',
+        ),
       packageName: z
         .string()
         .optional()
-        .describe("Optional package name override if it cannot be derived from the dependency path."),
+        .describe(
+          'Optional package name override if it cannot be derived from the dependency path.',
+        ),
       packageVersion: z
         .string()
         .optional()
-        .describe("Optional package version override if it cannot be derived from the dependency path."),
+        .describe(
+          'Optional package version override if it cannot be derived from the dependency path.',
+        ),
       version: z
         .string()
         .optional()
-        .describe("Snyk REST API version, e.g. 2026-03-25"),
+        .describe('Snyk REST API version, e.g. 2026-03-25'),
       perPage: z
         .number()
         .optional()
         .default(1000)
-        .describe("How many project issue paths to request from v1 (max 1000)."),
+        .describe(
+          'How many project issue paths to request from v1 (max 1000).',
+        ),
     },
   },
-  async ({ orgId, projectId, issueId, packageType, packageName, packageVersion, version, perPage }) => {
-    const apiVersion = version || SNYK_API_VERSION;
+  async ({
+    orgId,
+    projectId,
+    issueId,
+    packageType,
+    packageName,
+    packageVersion,
+    version,
+    perPage,
+  }) => {
+    const apiVersion = version || env.SNYK_API_VERSION;
     const { restIssue, restIssueId, v1IssueId } = await resolveProjectIssueIds(
       orgId,
       projectId,
@@ -946,15 +1125,17 @@ server.registerTool(
         `/project/${encodeURIComponent(projectId)}` +
         `/issue/${encodeURIComponent(v1IssueId)}` +
         `/paths?perPage=${encodeURIComponent(String(perPage))}&page=1`,
-      "application/json",
+      'application/json',
     );
 
     const rawPaths = Array.isArray(pathData?.paths) ? pathData.paths : [];
     const pathSummaries = rawPaths.map(summarizeIssuePath);
     const shortestPath = pathSummaries[0] ?? null;
 
-    const derivedPackageName = packageName ?? shortestPath?.vulnerablePackage?.name ?? null;
-    const derivedPackageVersion = packageVersion ?? shortestPath?.vulnerablePackage?.version ?? null;
+    const derivedPackageName =
+      packageName ?? shortestPath?.vulnerablePackage?.name ?? null;
+    const derivedPackageVersion =
+      packageVersion ?? shortestPath?.vulnerablePackage?.version ?? null;
     const purl = derivePurl(
       packageType,
       undefined,
@@ -962,13 +1143,13 @@ server.registerTool(
       derivedPackageVersion ?? undefined,
     );
 
-    let packageIssue: any = null;
+    let packageIssue: IssueSummary | null = null;
     if (purl) {
       const pkgData = await snykGet(
         `/rest/orgs/${encodeURIComponent(orgId)}/packages/${encodePurl(purl)}/issues?version=${encodeURIComponent(apiVersion)}&limit=1000`,
       );
       const pkgItems = Array.isArray(pkgData?.data) ? pkgData.data : [];
-      const match = pkgItems.find((item: any) => {
+      const match = pkgItems.find((item: SnykItem) => {
         const attrs = item?.attributes ?? {};
         return item?.id === v1IssueId || attrs?.key === v1IssueId;
       });
@@ -987,9 +1168,11 @@ server.registerTool(
     const directDependencies = Array.from(
       new Set(
         pathSummaries
-          .map((path: any) => path.directDependency)
+          .map((path: PathSummary) => path.directDependency)
           .filter(Boolean)
-          .map((dep: any) => formatPackageLabel(dep.name, dep.version)),
+          .map((dep: NormalizedPathNode) =>
+            formatPackageLabel(dep.name, dep.version),
+          ),
       ),
     );
 
@@ -1006,7 +1189,10 @@ server.registerTool(
         restIssueId,
         v1IssueId,
         title: restIssue?.title ?? packageIssue?.title ?? null,
-        severity: restIssue?.effectiveSeverityLevel ?? packageIssue?.effectiveSeverityLevel ?? null,
+        severity:
+          restIssue?.effectiveSeverityLevel ??
+          packageIssue?.effectiveSeverityLevel ??
+          null,
         status: restIssue?.status ?? null,
         risk: restIssue?.risk ?? null,
         problems: restIssue?.problems ?? packageIssue?.problems ?? [],
@@ -1017,12 +1203,15 @@ server.registerTool(
         version: derivedPackageVersion,
         purl,
         fixedIn: selectedPackageFixVersion,
-        vulnerableRangeFromDb: packageIssue?.description?.match(/versions\s+(.+?)\n/i)?.[1] ?? null,
+        vulnerableRangeFromDb:
+          packageIssue?.description?.match(/versions\s+(.+?)\n/i)?.[1] ?? null,
       },
       issueContext: {
         introducedThrough: directDependencies,
         remediation: shortestPath?.remediation ?? null,
-        exploitMaturity: restIssue?.risk?.factors?.exploitMaturity ?? null,
+        exploitMaturity:
+          (restIssue?.risk?.factors as Record<string, unknown> | undefined)
+            ?.exploitMaturity ?? null,
         detailedPathsCount: pathSummaries.length,
         shortestPath: shortestPath?.pathString ?? null,
       },
@@ -1035,7 +1224,7 @@ server.registerTool(
     };
 
     return {
-      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
     };
   },
 );
@@ -1045,47 +1234,63 @@ server.registerTool(
 // ---------------------------------------------------------------------------
 
 server.registerTool(
-  "snyk_get_package_issue_description",
+  'snyk_get_package_issue_description',
   {
     description:
-      "Get all Snyk security issues for a package (PURL). " +
-      "Returns up to 1000 issues — the allIssues payload can be large. " +
-      "Use issueRef to filter to a single issue when possible.",
+      'Get all Snyk security issues for a package (PURL). ' +
+      'Returns up to 1000 issues — the allIssues payload can be large. ' +
+      'Use issueRef to filter to a single issue when possible.',
     inputSchema: {
       orgId: z
         .string()
-        .describe("Snyk Organization ID. Use snyk_resolve_org_id if you only have a slug."),
+        .describe(
+          'Snyk Organization ID. Use snyk_resolve_org_id if you only have a slug.',
+        ),
       purl: z
         .string()
         .optional()
-        .describe("Package URL, e.g. pkg:npm/lodash@4.17.15"),
+        .describe('Package URL, e.g. pkg:npm/lodash@4.17.15'),
       packageType: z
         .string()
         .optional()
-        .default("npm")
-        .describe("Optional package ecosystem when constructing a PURL from name+version. Example: npm."),
+        .default('npm')
+        .describe(
+          'Optional package ecosystem when constructing a PURL from name+version. Example: npm.',
+        ),
       packageName: z
         .string()
         .optional()
-        .describe("Optional package name when you prefer structured package inputs over a raw PURL."),
+        .describe(
+          'Optional package name when you prefer structured package inputs over a raw PURL.',
+        ),
       packageVersion: z
         .string()
         .optional()
-        .describe("Optional package version when you prefer structured package inputs over a raw PURL."),
+        .describe(
+          'Optional package version when you prefer structured package inputs over a raw PURL.',
+        ),
       issueRef: z
         .string()
         .optional()
         .describe(
-          "Optional Snyk issue ID or CVE, e.g. SNYK-JS-LODASH-590103 or CVE-2020-8203",
+          'Optional Snyk issue ID or CVE, e.g. SNYK-JS-LODASH-590103 or CVE-2020-8203',
         ),
       version: z
         .string()
         .optional()
-        .describe("Optional Snyk REST API version, e.g. 2024-10-15"),
+        .describe('Optional Snyk REST API version, e.g. 2024-10-15'),
     },
   },
-  async ({ orgId, purl, packageType, packageName, packageVersion, issueRef, version }) => {
-    const apiVersion = version || SNYK_API_VERSION;
+  async ({
+    orgId,
+    purl,
+    packageType,
+    packageName,
+    packageVersion,
+    issueRef,
+    version,
+  }) => {
+    const apiVersion = version || env.SNYK_API_VERSION;
     const resolvedPurl = requirePurlInput(
       packageType,
       purl,
@@ -1101,18 +1306,24 @@ server.registerTool(
 
     const items = Array.isArray(data?.data) ? data.data : [];
     const issue = issueRef
-      ? items.find((item: any) => {
-          const id = item?.id ?? "";
+      ? items.find((item: SnykItem) => {
+          const id = item?.id ?? '';
           const attrs = item?.attributes ?? {};
+          const rawIdentifiers = attrs['identifiers'] as
+            Record<string, string[]> | undefined;
           const identifiers = [
             id,
-            attrs.key,
-            ...(attrs.identifiers?.CVE ?? []),
-            ...(attrs.identifiers?.CWE ?? []),
-            ...(Array.isArray(attrs.problems) ? attrs.problems.map((p: any) => p.id) : []),
-          ].filter(Boolean);
+            attrs['key'] as string | undefined,
+            ...(rawIdentifiers?.CVE ?? []),
+            ...(rawIdentifiers?.CWE ?? []),
+            ...(Array.isArray(attrs.problems)
+              ? (attrs.problems as Record<string, unknown>[]).map(
+                  (p: Record<string, unknown>) => p.id as string,
+                )
+              : []),
+          ].filter(Boolean) as string[];
           return identifiers.some(
-            (v: string) => v.toLowerCase() === issueRef.toLowerCase(),
+            (v) => v.toLowerCase() === issueRef.toLowerCase(),
           );
         })
       : undefined;
@@ -1134,7 +1345,7 @@ server.registerTool(
     };
 
     return {
-      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
     };
   },
 );
@@ -1144,29 +1355,33 @@ server.registerTool(
 // ---------------------------------------------------------------------------
 
 server.registerTool(
-  "snyk_get_project_issue_paths",
+  'snyk_get_project_issue_paths',
   {
     description:
-      "Get the project issue paths for the last Snyk analysis. " +
-      "Accepts either a V1 Snyk issue ID (e.g. SNYK-JS-LODASH-590103) or a REST issue UUID and resolves it to the V1 issue ID automatically.",
+      'Get the project issue paths for the last Snyk analysis. ' +
+      'Accepts either a V1 Snyk issue ID (e.g. SNYK-JS-LODASH-590103) or a REST issue UUID and resolves it to the V1 issue ID automatically.',
     inputSchema: {
       orgId: z
         .string()
-        .describe("Snyk Organization ID. Use snyk_resolve_org_id if you only have a slug."),
-      projectId: z.string().describe("Snyk Project ID"),
+        .describe(
+          'Snyk Organization ID. Use snyk_resolve_org_id if you only have a slug.',
+        ),
+      projectId: z.string().describe('Snyk Project ID'),
       issueId: z
         .string()
-        .describe("Snyk vulnerability issue ID (SNYK-...) or REST issue UUID."),
+        .describe('Snyk vulnerability issue ID (SNYK-...) or REST issue UUID.'),
       page: z.number().optional().default(1),
       perPage: z.number().optional().default(1000),
       version: z
         .string()
         .optional()
-        .describe("Snyk REST API version used when a REST issue UUID must be resolved to a V1 issue ID."),
+        .describe(
+          'Snyk REST API version used when a REST issue UUID must be resolved to a V1 issue ID.',
+        ),
     },
   },
   async ({ orgId, projectId, issueId, page, perPage, version }) => {
-    const apiVersion = version || SNYK_API_VERSION;
+    const apiVersion = version || env.SNYK_API_VERSION;
     const { restIssueId, v1IssueId } = await resolveProjectIssueIds(
       orgId,
       projectId,
@@ -1179,11 +1394,20 @@ server.registerTool(
         `/project/${encodeURIComponent(projectId)}` +
         `/issue/${encodeURIComponent(v1IssueId)}` +
         `/paths?perPage=${encodeURIComponent(String(perPage))}&page=${encodeURIComponent(String(page))}`,
-      "application/json",
+      'application/json',
     );
 
     const result = {
-      query: { orgId, projectId, issueId, resolvedRestIssueId: restIssueId, resolvedV1IssueId: v1IssueId, page, perPage, apiVersion },
+      query: {
+        orgId,
+        projectId,
+        issueId,
+        resolvedRestIssueId: restIssueId,
+        resolvedV1IssueId: v1IssueId,
+        page,
+        perPage,
+        apiVersion,
+      },
       snapshotId: data?.snapshotId,
       total: data?.total,
       shortestPath: Array.isArray(data?.paths) ? data.paths[0] : undefined,
@@ -1192,7 +1416,7 @@ server.registerTool(
     };
 
     return {
-      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
     };
   },
 );

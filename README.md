@@ -41,9 +41,9 @@ Most tool inputs that end in `Id` expect Snyk UUIDs discovered from earlier call
 ### Install & Build
 
 ```sh
-cd tools/snyk-api-mcp
-npm install
-npm run build
+cd snyk-api-mcp
+pnpm install
+pnpm run build
 ```
 
 ### Configuration
@@ -198,10 +198,40 @@ Semantics note:
 
 ```sh
 # Watch mode (auto-rebuild on changes)
-npm run dev
+pnpm run dev
 
 # One-shot build
-npm run build
+pnpm run build
+```
+
+## Release to GitHub Packages
+
+This repository can publish the MCP server to the GitHub npm registry instead of `npmjs.com`.
+
+- Publish trigger: GitHub Release with a semver tag such as `v0.2.1`
+- Target registry: `https://npm.pkg.github.com`
+- Published package name: `@<github-owner>/snyk-api-mcp`
+
+The workflow automatically:
+
+1. installs dependencies with `pnpm`
+2. builds the TypeScript project
+3. rewrites the package name to the current GitHub owner scope
+4. publishes the package to GitHub Packages using `GITHUB_TOKEN`
+
+### Installing the published package
+
+Consumers need access to GitHub Packages and an `.npmrc` entry for the owner scope, for example:
+
+```ini
+@YOUR_GITHUB_OWNER:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
+```
+
+Then install the package via:
+
+```sh
+pnpm add @YOUR_GITHUB_OWNER/snyk-api-mcp
 ```
 
 ### Adding a New Tool
