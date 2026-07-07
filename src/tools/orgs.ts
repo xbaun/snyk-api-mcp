@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 import { env } from '../config.js';
-import { snykGet } from '../snyk/client.js';
+import { expectSnykRestData, snykRestClient } from '../snyk/client.js';
 import type { SnykItem } from '../utils/helpers.js';
 
 export function registerOrgTools(server: McpServer) {
@@ -14,47 +14,57 @@ export function registerOrgTools(server: McpServer) {
     'snyk_resolve_org_id',
     {
       description:
-        "Resolve a Snyk organization slug (e.g. 'my-snyk-org') or partial name to its UUID. " +
-        'Use this before calling tools that require an orgId when you only have a human-readable org name.',
+        "Resolve a Snyk organization slug (e.g. 'my-snyk-org') to its UUID. " +
+        'Requires an exact slug match.',
       inputSchema: {
         orgSlug: z
           .string()
-          .describe(
-            "Organization slug or partial name, e.g. 'my-snyk-org' or 'my-org'",
-          ),
+          .describe("Exact organization slug, e.g. 'my-snyk-org'"),
       },
     },
     async ({ orgSlug }) => {
-      const data = await snykGet(
-        `/rest/orgs?version=${encodeURIComponent(env.SNYK_API_VERSION)}&limit=100`,
+      const data = expectSnykRestData(
+        await snykRestClient.GET('/orgs', {
+          params: {
+            query: {
+              version: env.SNYK_API_VERSION,
+              limit: 100,
+            },
+          },
+        }),
       );
       const orgs = Array.isArray(data?.data) ? data.data : [];
-      const lower = orgSlug.toLowerCase();
+      const exactSlug = orgSlug.trim().toLowerCase();
+      const match = orgs.find(
+        (org: SnykItem) =>
+          ((org?.attributes?.slug as string) ?? '').toLowerCase() === exactSlug,
+      );
 
-      const matches = orgs
-        .filter((org: SnykItem) => {
-          const slug = (org?.attributes?.slug as string) ?? '';
-          const name = (org?.attributes?.name as string) ?? '';
-          return (
-            slug.toLowerCase().includes(lower) ||
-            name.toLowerCase().includes(lower)
-          );
-        })
-        .map((org: SnykItem) => ({
-          id: org.id,
-          slug: org?.attributes?.slug,
-          name: org?.attributes?.name,
-          groupName: (
-            org?.attributes?.group as Record<string, unknown> | undefined
-          )?.name,
-        }));
+      if (!match?.id) {
+        throw new Error(
+          `No Snyk organization found for exact slug '${orgSlug}'.`,
+        );
+      }
+
+      const attributes = (match.attributes ?? {}) as Record<string, unknown>;
 
       return {
         content: [
           {
             type: 'text',
             text: JSON.stringify(
-              { query: orgSlug, matchCount: matches.length, matches },
+              {
+                query: { orgSlug },
+                orgId: match.id,
+                org: {
+                  id: match.id,
+                  slug: attributes.slug,
+                  name: attributes.name,
+                  groupName: (
+                    attributes.group as Record<string, unknown> | undefined
+                  )?.name,
+                },
+              },
               null,
               2,
             ),
@@ -96,14 +106,17 @@ export function registerOrgTools(server: McpServer) {
     async ({ orgId, targetId, version }) => {
       const apiVersion = version || env.SNYK_API_VERSION;
 
-      const params = new URLSearchParams({
-        version: apiVersion,
-        limit: '100',
-      });
-      if (targetId) params.set('target_id', targetId);
-
-      const data = await snykGet(
-        `/rest/orgs/${encodeURIComponent(orgId)}/projects?${params.toString()}`,
+      const data = expectSnykRestData(
+        await snykRestClient.GET('/orgs/{org_id}/projects', {
+          params: {
+            path: { org_id: orgId },
+            query: {
+              version: apiVersion,
+              limit: 100,
+              target_id: targetId ? [targetId] : undefined,
+            },
+          },
+        }),
       );
 
       const projects = (Array.isArray(data?.data) ? data.data : []).map(
@@ -114,7 +127,9 @@ export function registerOrgTools(server: McpServer) {
           origin: p?.attributes?.origin,
           status: p?.attributes?.status,
           created: p?.attributes?.created,
-          targetId: p?.relationships?.target?.data?.id,
+          targetId: Array.isArray(p?.relationships?.target?.data)
+            ? p.relationships?.target?.data[0]?.id
+            : p?.relationships?.target?.data?.id,
         }),
       );
 
@@ -170,14 +185,17 @@ export function registerOrgTools(server: McpServer) {
     async ({ orgId, displayName, version }) => {
       const apiVersion = version || env.SNYK_API_VERSION;
 
-      const params = new URLSearchParams({
-        version: apiVersion,
-        limit: '100',
-      });
-      if (displayName) params.set('display_name', displayName);
-
-      const data = await snykGet(
-        `/rest/orgs/${encodeURIComponent(orgId)}/targets?${params.toString()}`,
+      const data = expectSnykRestData(
+        await snykRestClient.GET('/orgs/{org_id}/targets', {
+          params: {
+            path: { org_id: orgId },
+            query: {
+              version: apiVersion,
+              limit: 100,
+              display_name: displayName,
+            },
+          },
+        }),
       );
 
       const targets = (Array.isArray(data?.data) ? data.data : []).map(

@@ -2,17 +2,21 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 import { env } from '../config.js';
-import { snykGet } from '../snyk/client.js';
+import {
+  expectSnykRestData,
+  type SnykIssueTypeFilter,
+  snykRestClient,
+  type SnykScanItemType,
+  type SnykSeverityFilter,
+  type SnykStatusFilter,
+} from '../snyk/client.js';
+import type { operations } from '../snyk/types/snyk-rest.d.ts';
 import type {
   CoordinateSummary,
   IssueSummary,
   SnykItem,
 } from '../utils/helpers.js';
-import {
-  looksLikeUuid,
-  normalizeVersion,
-  requireRestIssueUuid,
-} from '../utils/helpers.js';
+import { normalizeVersion, requireRestIssueUuid } from '../utils/helpers.js';
 
 // ---------------------------------------------------------------------------
 // Shared helpers for the issues domain
@@ -20,6 +24,8 @@ import {
 
 export function summarizeIssueV3(item: SnykItem): IssueSummary {
   const attrs: Record<string, unknown> = item?.attributes ?? {};
+  const scanItemRelationship = item?.relationships?.scan_item?.data;
+  const organizationRelationship = item?.relationships?.organization?.data;
 
   const coordinates = Array.isArray(attrs.coordinates)
     ? (attrs.coordinates as Record<string, unknown>[]).map(
@@ -103,7 +109,7 @@ export function summarizeIssueV3(item: SnykItem): IssueSummary {
     : [];
 
   return {
-    id: item?.id,
+    id: item?.id ?? '',
     key: attrs.key as string | undefined,
     title: attrs.title as string | undefined,
     description: attrs.description as string | undefined,
@@ -123,47 +129,105 @@ export function summarizeIssueV3(item: SnykItem): IssueSummary {
       factors: risk['factors'],
     },
     resolution: attrs.resolution,
-    scanItemId: item?.relationships?.scan_item?.data?.id,
-    organizationId: item?.relationships?.organization?.data?.id,
+    scanItemId: Array.isArray(scanItemRelationship)
+      ? (scanItemRelationship[0]?.id ?? undefined)
+      : (scanItemRelationship?.id ?? undefined),
+    organizationId: Array.isArray(organizationRelationship)
+      ? (organizationRelationship[0]?.id ?? undefined)
+      : (organizationRelationship?.id ?? undefined),
   };
 }
 
-export async function resolveProjectIssueIds(
+type IssueTypeInput = 'code' | 'package' | 'all';
+type IssueStatusInput = 'open' | 'resolved' | 'ignored';
+type IssueSeverityInput = 'low' | 'medium' | 'high' | 'critical';
+type ListIssuesQuery = operations['listOrgIssues']['parameters']['query'];
+
+function mapIssueTypeToRest(issueType: IssueTypeInput) {
+  if (issueType === 'code') return 'code';
+  if (issueType === 'package') return 'package_vulnerability';
+  return undefined;
+}
+
+function buildListIssuesQuery({
+  apiVersion,
+  issueType,
+  severity,
+  status,
+  scanItemId,
+  scanItemType,
+}: {
+  apiVersion: string;
+  issueType: IssueTypeInput;
+  severity?: IssueSeverityInput;
+  status?: IssueStatusInput;
+  scanItemId?: string;
+  scanItemType?: SnykScanItemType;
+}): ListIssuesQuery {
+  const query: ListIssuesQuery = {
+    version: apiVersion,
+    limit: 100,
+  };
+
+  const restIssueType = mapIssueTypeToRest(issueType);
+  if (restIssueType) {
+    query.type = restIssueType as SnykIssueTypeFilter;
+  }
+
+  if (severity) {
+    query.effective_severity_level = [severity] as SnykSeverityFilter[];
+  }
+
+  if (status === 'ignored') {
+    query.ignored = true;
+  } else if (status) {
+    query.status = [status] as SnykStatusFilter[];
+  }
+
+  if (scanItemId) {
+    query['scan_item.id'] = scanItemId;
+  }
+
+  if (scanItemType) {
+    query['scan_item.type'] = scanItemType;
+  }
+
+  return query;
+}
+export async function resolveIssueKeyFromRestId(
   orgId: string,
-  projectId: string,
-  issueId: string,
+  restIssueId: string,
   apiVersion: string,
 ) {
-  let restIssue: IssueSummary | null;
-  let v1IssueId = issueId;
+  requireRestIssueUuid('resolveIssueKeyFromRestId', restIssueId);
 
-  if (looksLikeUuid(issueId)) {
-    const detail = await snykGet(
-      `/rest/orgs/${encodeURIComponent(orgId)}/issues/${encodeURIComponent(issueId)}?version=${encodeURIComponent(apiVersion)}`,
+  const detail = expectSnykRestData(
+    await snykRestClient.GET('/orgs/{org_id}/issues/{issue_id}', {
+      params: {
+        path: { org_id: orgId, issue_id: restIssueId },
+        query: { version: apiVersion },
+      },
+    }),
+  );
+
+  if (!detail?.data) {
+    throw new Error(
+      `Snyk REST issue '${restIssueId}' returned no issue resource.`,
     );
-    restIssue = detail?.data ? summarizeIssueV3(detail.data) : null;
-    v1IssueId = restIssue?.key ?? issueId;
-  } else {
-    const params = new URLSearchParams({
-      version: apiVersion,
-      limit: '100',
-      'scan_item.type': 'project',
-      'scan_item.id': projectId,
-    });
-    const data = await snykGet(
-      `/rest/orgs/${encodeURIComponent(orgId)}/issues?${params.toString()}`,
+  }
+
+  const restIssue = summarizeIssueV3(detail.data);
+  const issueKey = restIssue.key;
+
+  if (!issueKey) {
+    throw new Error(
+      `Snyk REST issue '${restIssueId}' did not include an issue key required for dependency path queries.`,
     );
-    const items = Array.isArray(data?.data) ? data.data : [];
-    const match = items.find(
-      (item: SnykItem) => item?.attributes?.key === issueId,
-    );
-    restIssue = match ? summarizeIssueV3(match) : null;
   }
 
   return {
     restIssue,
-    restIssueId: restIssue?.id ?? (looksLikeUuid(issueId) ? issueId : null),
-    v1IssueId,
+    issueKey,
   };
 }
 
@@ -230,29 +294,26 @@ export function registerIssueTools(server: McpServer) {
       version,
     }) => {
       const apiVersion = version || env.SNYK_API_VERSION;
-      const API_PAGE_SIZE = 100;
-
-      const params = new URLSearchParams({
-        version: apiVersion,
-        limit: String(API_PAGE_SIZE),
-        'scan_item.type': 'project',
-        'scan_item.id': projectId,
-      });
-
-      let snykType: string | undefined;
-      if (issueType === 'code') snykType = 'code';
-      else if (issueType === 'package') snykType = 'package';
-
-      if (snykType) params.set('type', snykType);
-      if (severity) params.set('effective_severity_level', severity);
-      if (status) params.set('status', status);
-
-      const data = await snykGet(
-        `/rest/orgs/${encodeURIComponent(orgId)}/issues?${params.toString()}`,
+      const data = expectSnykRestData(
+        await snykRestClient.GET('/orgs/{org_id}/issues', {
+          params: {
+            path: { org_id: orgId },
+            query: buildListIssuesQuery({
+              apiVersion,
+              issueType,
+              severity,
+              status,
+              scanItemId: projectId,
+              scanItemType: 'project',
+            }),
+          },
+        }),
       );
 
-      let items = Array.isArray(data?.data) ? data.data : [];
-      items = items.slice(0, limit);
+      const items = (Array.isArray(data?.data) ? data.data : []).slice(
+        0,
+        limit,
+      );
 
       const result = {
         query: {
@@ -283,8 +344,7 @@ export function registerIssueTools(server: McpServer) {
     {
       description:
         "List issues for a Snyk organization. Supports filtering by type ('code' or 'package'), " +
-        'severity, status, and free-text title search. Use this to find Snyk Code issues (type=code) ' +
-        "or to discover issues when you only have a title keyword (e.g. 'Hardcoded Secret').",
+        'severity, and status.',
       inputSchema: {
         orgId: z
           .string()
@@ -306,12 +366,6 @@ export function registerIssueTools(server: McpServer) {
           .enum(['open', 'resolved', 'ignored'])
           .optional()
           .describe('Filter by issue status.'),
-        titleSearch: z
-          .string()
-          .optional()
-          .describe(
-            'Free-text search on issue title (client-side substring match). Case-insensitive.',
-          ),
         limit: z
           .number()
           .optional()
@@ -323,51 +377,26 @@ export function registerIssueTools(server: McpServer) {
           .describe('Snyk REST API version, e.g. 2026-03-25'),
       },
     },
-    async ({
-      orgId,
-      issueType,
-      severity,
-      status,
-      titleSearch,
-      limit,
-      version,
-    }) => {
+    async ({ orgId, issueType, severity, status, limit, version }) => {
       const apiVersion = version || env.SNYK_API_VERSION;
-
-      const API_PAGE_SIZE = 100;
-
-      const params = new URLSearchParams({
-        version: apiVersion,
-        limit: String(API_PAGE_SIZE),
-      });
-
-      let snykType: string | undefined;
-      if (issueType === 'code') snykType = 'code';
-      else if (issueType === 'package') snykType = 'package';
-
-      if (snykType) params.set('type', snykType);
-      if (severity) params.set('effective_severity_level', severity);
-      if (status) params.set('status', status);
-
-      const data = await snykGet(
-        `/rest/orgs/${encodeURIComponent(orgId)}/issues?${params.toString()}`,
+      const data = expectSnykRestData(
+        await snykRestClient.GET('/orgs/{org_id}/issues', {
+          params: {
+            path: { org_id: orgId },
+            query: buildListIssuesQuery({
+              apiVersion,
+              issueType,
+              severity,
+              status,
+            }),
+          },
+        }),
       );
 
-      let items = Array.isArray(data?.data) ? data.data : [];
-
-      if (titleSearch) {
-        const lower = titleSearch.toLowerCase();
-        items = items.filter((item: SnykItem) => {
-          const title = (item?.attributes?.title as string) ?? '';
-          const description = (item?.attributes?.description as string) ?? '';
-          return (
-            title.toLowerCase().includes(lower) ||
-            description.toLowerCase().includes(lower)
-          );
-        });
-      }
-
-      items = items.slice(0, limit);
+      const items = (Array.isArray(data?.data) ? data.data : []).slice(
+        0,
+        limit,
+      );
 
       const result = {
         query: {
@@ -375,7 +404,6 @@ export function registerIssueTools(server: McpServer) {
           issueType,
           severity,
           status,
-          titleSearch,
           limit,
           apiVersion,
         },
@@ -425,8 +453,13 @@ export function registerIssueTools(server: McpServer) {
 
       requireRestIssueUuid('snyk_get_issue_detail', issueId);
 
-      const data = await snykGet(
-        `/rest/orgs/${encodeURIComponent(orgId)}/issues/${encodeURIComponent(issueId)}?version=${encodeURIComponent(apiVersion)}`,
+      const data = expectSnykRestData(
+        await snykRestClient.GET('/orgs/{org_id}/issues/{issue_id}', {
+          params: {
+            path: { org_id: orgId, issue_id: issueId },
+            query: { version: apiVersion },
+          },
+        }),
       );
 
       const result = {

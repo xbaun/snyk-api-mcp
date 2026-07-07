@@ -21,6 +21,8 @@
     "start": "node build/index.js",
     "lint": "pnpm exec eslint .",
     "lint:fix": "pnpm exec eslint . --fix",
+    "gen:synk-rest": "pnpm exec openapi-typescript https://api.snyk.io/rest/openapi/2026-03-25 -o src/snyk/types/snyk-rest.d.ts",
+    "gen:synk-api-v1": "pnpm exec openapi-typescript specs/snyk_v1-api-spec.yaml -o src/snyk/types/snyk-api-v1-types.d.ts",
     "prepare": "husky"
   },
   "keywords": [],
@@ -31,6 +33,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "catalog:",
+    "openapi-fetch": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
@@ -49,6 +52,7 @@
     "eslint-plugin-unused-imports": "catalog:eslint",
     "husky": "catalog:tooling",
     "lint-staged": "catalog:tooling",
+    "openapi-typescript": "catalog:tooling",
     "prettier": "catalog:eslint",
     "semantic-release": "catalog:tooling",
     "tsx": "catalog:tooling",

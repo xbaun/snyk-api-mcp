@@ -17,6 +17,8 @@ export function registerOnboardingTool(server: McpServer) {
         identifierRules: {
           orgId:
             'Always the Snyk organization UUID, never an org display name or slug.',
+          orgSlug:
+            'When using snyk_resolve_org_id, pass the exact organization slug.',
           projectId:
             'Always the Snyk project UUID, never a project name, repo name, or display name.',
         },
@@ -24,7 +26,7 @@ export function registerOnboardingTool(server: McpServer) {
           {
             step: 1,
             tool: 'snyk_resolve_org_id',
-            input: "orgSlug (e.g. 'my-snyk-org')",
+            input: "exact orgSlug (e.g. 'my-snyk-org')",
             output: 'orgId (UUID)',
             note: 'You can also use the org UUID directly if you already know it.',
           },
@@ -55,7 +57,7 @@ export function registerOnboardingTool(server: McpServer) {
           {
             tool: 'snyk_list_org_issues',
             description:
-              'Search all issues across the entire org. Supports titleSearch for keyword matching.',
+              'List issues across the entire org using explicit API filters.',
           },
           {
             tool: 'snyk_get_issue_detail',
@@ -65,17 +67,23 @@ export function registerOnboardingTool(server: McpServer) {
           {
             tool: 'snyk_get_package_issue_description',
             description:
-              'Look up all known vulnerabilities for a package by PURL (e.g. pkg:npm/axios@1.7.0).',
+              'Look up vulnerabilities for a package by exact PURL (e.g. pkg:npm/axios@1.7.0).',
+          },
+          {
+            tool: 'snyk_get_project_issue_analysis',
+            description:
+              'Get combined project issue analysis for an exact REST issue UUID and exact package PURL.',
           },
           {
             tool: 'snyk_get_project_issue_paths',
             description:
-              'Get the data flow path for a vulnerability in a project (v1 API).',
+              'Get dependency path details for a project issue by REST issue UUID.',
           },
         ],
         tips: [
           'Always resolve the org ID first — most tools require it.',
           'When a tool asks for orgId or projectId, pass the Snyk UUID returned by earlier tools, not a display name.',
+          'Strict input contracts apply: pass exact slugs, exact REST issue UUIDs, and exact PURLs.',
           "Filter issues by severity+status to reduce noise (e.g. severity='critical', status='open').",
           "The same vulnerability (same Snyk key) may appear in multiple projects — that's expected.",
           'Use snyk_get_projects with targetId to efficiently list all projects for one repo.',

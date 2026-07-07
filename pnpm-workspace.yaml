@@ -2,6 +2,7 @@ packages: []
 
 catalog:
   "@modelcontextprotocol/sdk": ^1.29.0
+  openapi-fetch: ^0.17.0
   zod: ^4.4.3
 
 catalogs:
@@ -23,6 +24,7 @@ catalogs:
     '@semantic-release/npm': ^13.1.5
     husky: ^9.1.7
     lint-staged: ^17.0.8
+    openapi-typescript: ^7.13.0
     semantic-release: ^25.0.5
     tsx: ^4.22.4
     typescript: ^6.0.3

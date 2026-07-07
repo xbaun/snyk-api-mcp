@@ -2,10 +2,22 @@
 // Shared types
 // ---------------------------------------------------------------------------
 
+type SnykRelationshipNode = {
+  id?: string | null;
+  type?: string | null;
+  [key: string]: unknown;
+};
+
 export type SnykItem = {
-  id: string;
-  attributes: Record<string, unknown>;
-  relationships?: Record<string, { data?: { id?: string; type?: string } }>;
+  id?: string;
+  type?: string;
+  attributes?: Record<string, unknown>;
+  relationships?: Record<
+    string,
+    {
+      data?: SnykRelationshipNode | SnykRelationshipNode[];
+    } | null
+  >;
 };
 
 export type SnykPathNode = Record<string, unknown>;
@@ -71,8 +83,7 @@ export function requireRestIssueUuid(toolName: string, issueId: string) {
 
   throw new Error(
     `${toolName} requires a REST API issue UUID. ` +
-      'For project-scoped vulnerability identifiers like SNYK-JS-..., use ' +
-      'snyk_get_project_issue_analysis or snyk_get_project_issue_paths.',
+      'Discover the UUID first via snyk_get_project_issues or snyk_list_org_issues.',
   );
 }
 
