@@ -20,8 +20,10 @@ catalogs:
     '@commitlint/cli': ^21.2.0
     '@commitlint/config-conventional': ^21.2.0
     '@commitlint/types': ^21.2.0
+    '@semantic-release/npm': ^13.1.5
     husky: ^9.1.7
     lint-staged: ^17.0.8
+    semantic-release: ^25.0.5
     tsx: ^4.22.4
     typescript: ^6.0.3
   types:

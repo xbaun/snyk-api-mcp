@@ -1,9 +1,8 @@
 {
-  "name": "snyk-api-mcp",
-  "version": "0.2.0",
+  "name": "@xbaun/snyk-api-mcp",
+  "version": "0.0.0-development",
   "description": "MCP server exposing the Snyk REST API as tools for AI coding agents.",
   "type": "module",
-  "private": true,
   "main": "build/index.js",
   "bin": {
     "snyk-api-mcp": "build/index.js"
@@ -27,6 +26,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "catalog:",
     "zod": "catalog:"
@@ -36,6 +38,7 @@
     "@commitlint/config-conventional": "catalog:tooling",
     "@commitlint/types": "catalog:tooling",
     "@eslint/js": "catalog:eslint",
+    "@semantic-release/npm": "catalog:tooling",
     "@types/node": "catalog:types",
     "eslint": "catalog:eslint",
     "eslint-config-prettier": "catalog:eslint",
@@ -47,6 +50,7 @@
     "husky": "catalog:tooling",
     "lint-staged": "catalog:tooling",
     "prettier": "catalog:eslint",
+    "semantic-release": "catalog:tooling",
     "tsx": "catalog:tooling",
     "typescript": "catalog:tooling",
     "typescript-eslint": "catalog:eslint"
