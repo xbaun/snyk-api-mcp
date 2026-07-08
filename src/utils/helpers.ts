@@ -18,6 +18,7 @@ export type SnykItem = {
       data?: SnykRelationshipNode | SnykRelationshipNode[];
     } | null
   >;
+  meta?: Record<string, unknown>;
 };
 
 export type SnykPathNode = Record<string, unknown>;
@@ -37,15 +38,50 @@ export type PathSummary = {
   remediation: string;
 };
 
+export type IssueRegionSummary = {
+  start?: { line: number; column: number };
+  end?: { line: number; column: number };
+};
+
+export type IssueRepresentationSummary = {
+  id?: string;
+  type?: string;
+  identity?: string;
+  packageName?: string;
+  packageVersion?: string | null;
+  purl?: string | null;
+  file?: string;
+  commitId?: string;
+  region?: IssueRegionSummary;
+  resourcePath?: string;
+};
+
+export type IssueRemedySummary = {
+  type?: string;
+  description?: string;
+  details: {
+    upgradePackage: string[];
+    fixedIn?: string[];
+    schemaVersion?: string;
+  };
+};
+
+export type IssueRiskSummary = {
+  score?: number;
+  model?: string;
+  factors?: unknown;
+  exploitMaturityLevels?: Array<{ format: string; level: string }>;
+};
+
 export type CoordinateSummary = {
-  state?: unknown;
-  createdAt?: unknown;
-  resolvedAt?: unknown;
-  isFixableManually?: unknown;
-  isFixableSnyk?: unknown;
-  isFixableUpstream?: unknown;
-  remedies: Array<Record<string, unknown>>;
-  representations: Array<Record<string, unknown>>;
+  state?: 'open' | 'resolved';
+  createdAt?: string;
+  resolvedAt?: string;
+  isFixableManually?: boolean;
+  isFixableSnyk?: boolean;
+  isFixableUpstream?: boolean;
+  remedies: IssueRemedySummary[];
+  representations: IssueRepresentationSummary[];
 };
 
 type IssueSummaryBase = {
@@ -61,7 +97,7 @@ type IssueSummaryBase = {
   classes: Array<{ id?: string; type?: string; source?: string }>;
   problems: Array<{ id?: string; type?: string; source?: string }>;
   coordinates: CoordinateSummary[];
-  risk: { score?: unknown; model?: unknown; factors?: unknown };
+  risk: IssueRiskSummary;
   resolution?: unknown;
 };
 
@@ -88,13 +124,49 @@ export function looksLikeUuid(value: string): boolean {
   );
 }
 
-export function requireRestIssueUuid(toolName: string, restIssueId: string) {
-  if (looksLikeUuid(restIssueId)) return;
+/**
+ * Parse the `starting_after` cursor out of a Snyk REST response `links` object.
+ *
+ * Snyk returns `links.next` as either a full URL string like:
+ *   …?…&starting_after=v1.eyJpZCI6IjEwMDAifQo=
+ * or as a `LinkProperty` object `{ href: "…", meta: {…} }`.
+ *
+ * We extract only the opaque cursor value so the caller can pass it back as
+ * `startingAfter` on the next request.
+ */
+export function extractNextCursor(
+  links: { next?: unknown } | null | undefined,
+): string | null {
+  if (!links) return null;
 
-  throw new Error(
-    `${toolName} requires a REST API issue UUID. ` +
-      'Discover the UUID first via snyk_get_project_issues or snyk_list_org_issues.',
-  );
+  const nextRaw = links.next;
+  if (!nextRaw) return null;
+
+  const href: string | null =
+    typeof nextRaw === 'string'
+      ? nextRaw
+      : typeof nextRaw === 'object' &&
+          (nextRaw as Record<string, unknown>)?.href != null
+        ? String((nextRaw as Record<string, unknown>).href)
+        : null;
+
+  if (!href) return null;
+
+  // Snyk returns relative URLs like /rest/orgs/...?starting_after=...
+  // Extract just the query string and parse with URLSearchParams directly.
+  const queryStart = href.indexOf('?');
+  if (queryStart === -1) return null;
+  return new URLSearchParams(href.slice(queryStart)).get('starting_after');
+}
+
+export function requireUuid(fieldName: string, value: string) {
+  if (looksLikeUuid(value)) return;
+
+  throw new Error(`'${fieldName}' must be a UUID. Got: '${value}'.`);
+}
+
+export function requireRestIssueUuid(toolName: string, restIssueId: string) {
+  requireUuid('restIssueId', restIssueId);
 }
 
 export function normalizeVersion(version: unknown): string | null {

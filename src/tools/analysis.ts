@@ -10,15 +10,14 @@ import type {
   NormalizedIssueSummary,
   NormalizedPathNode,
   PathSummary,
-  SnykItem,
   SnykPathNode,
 } from '../utils/helpers.js';
 import {
   formatPackageLabel,
   normalizePathNode,
   parsePackageFixVersions,
-  parseUpgradePackageValue,
   requireRestIssueUuid,
+  requireUuid,
   selectRelevantFixVersion,
   uniqueStrings,
 } from '../utils/helpers.js';
@@ -37,22 +36,13 @@ function extractIssueFixVersions(
 ): string[] {
   if (!issue) return [];
 
-  const coordinates = Array.isArray(issue.coordinates) ? issue.coordinates : [];
+  const coordinates = issue.coordinates;
   const versions = coordinates.flatMap((coordinate) => {
-    const remedies = Array.isArray(coordinate.remedies)
-      ? coordinate.remedies
-      : [];
-    return remedies.flatMap((remedy: Record<string, unknown>) => {
-      const details: Record<string, unknown> =
-        typeof remedy?.details === 'object' && remedy?.details !== null
-          ? (remedy.details as Record<string, unknown>)
-          : {};
+    return coordinate.remedies.flatMap((remedy) => {
       return [
-        ...parseUpgradePackageValue(details['upgradePackage']),
-        ...parseUpgradePackageValue(details['upgrade_package']),
-        ...parsePackageFixVersions(
-          typeof remedy?.description === 'string' ? remedy.description : null,
-        ),
+        ...remedy.details.upgradePackage,
+        ...(remedy.details.fixedIn ?? []),
+        ...parsePackageFixVersions(remedy.description ?? null),
       ];
     });
   });
@@ -138,6 +128,9 @@ export function registerAnalysisTools(server: McpServer) {
       },
     },
     async ({ orgId, projectId, restIssueId, purl, perPage }) => {
+      requireUuid('orgId', orgId);
+      requireUuid('projectId', projectId);
+
       const apiVersion = resolveRestApiVersion();
       requireRestIssueUuid('snyk_get_project_issue_analysis', restIssueId);
 
@@ -174,8 +167,14 @@ export function registerAnalysisTools(server: McpServer) {
         }),
       );
       const pkgItems = Array.isArray(pkgData?.data) ? pkgData.data : [];
+      const vulnerabilityIds = new Set(
+        restIssue.problems
+          .filter((problem) => problem.type === 'vulnerability')
+          .map((problem) => problem.id)
+          .filter((id): id is string => Boolean(id)),
+      );
       const match = pkgItems.find(
-        (item: SnykItem) => item?.attributes?.key === issueKey,
+        (item) => typeof item.id === 'string' && vulnerabilityIds.has(item.id),
       );
       const packageIssue = match ? summarizePackageVulnerability(match) : null;
 
@@ -228,8 +227,8 @@ export function registerAnalysisTools(server: McpServer) {
           introducedThrough: directDependencies,
           remediation: shortestPath?.remediation ?? null,
           exploitMaturity:
-            (restIssue?.risk?.factors as Record<string, unknown> | undefined)
-              ?.exploitMaturity ?? null,
+            restIssue.risk.exploitMaturityLevels?.map((level) => level.level) ??
+            null,
           detailedPathsCount: pathSummaries.length,
           shortestPath: shortestPath?.pathString ?? null,
         },
@@ -267,6 +266,8 @@ export function registerAnalysisTools(server: McpServer) {
       },
     },
     async ({ orgId, purl }) => {
+      requireUuid('orgId', orgId);
+
       const apiVersion = resolveRestApiVersion();
       const encodedPurl = encodePurl(purl);
 
@@ -324,6 +325,9 @@ export function registerAnalysisTools(server: McpServer) {
       },
     },
     async ({ orgId, projectId, restIssueId, page, perPage }) => {
+      requireUuid('orgId', orgId);
+      requireUuid('projectId', projectId);
+
       const apiVersion = resolveRestApiVersion();
       requireRestIssueUuid('snyk_get_project_issue_paths', restIssueId);
 

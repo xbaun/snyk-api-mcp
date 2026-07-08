@@ -9,148 +9,199 @@ import {
   type SnykSeverityFilter,
   type SnykStatusFilter,
 } from '../snyk/client.js';
-import type { operations } from '../snyk/types/snyk-rest.d.ts';
+import type { components, operations } from '../snyk/types/snyk-rest.d.ts';
 import type {
   CoordinateSummary,
   PackageVulnerabilitySummary,
   RestIssueSummary,
-  SnykItem,
 } from '../utils/helpers.js';
-import { normalizeVersion, requireRestIssueUuid } from '../utils/helpers.js';
+import {
+  normalizeVersion,
+  parseUpgradePackageValue,
+  requireRestIssueUuid,
+  requireUuid,
+} from '../utils/helpers.js';
+
+type RestIssue = components['schemas']['Issue'];
+type RestIssueAttributes = RestIssue['attributes'];
+type RestIssueCoordinate = NonNullable<
+  RestIssueAttributes['coordinates']
+>[number];
+type PackageIssue = components['schemas']['CommonIssueModelVThree'];
+type PackageIssueAttributes = NonNullable<PackageIssue['attributes']>;
+type PackageIssueCoordinate = NonNullable<
+  PackageIssueAttributes['coordinates']
+>[number];
+type PackageIssueRepresentation =
+  PackageIssueCoordinate['representations'][number];
 
 // ---------------------------------------------------------------------------
 // Shared helpers for the issues domain
 // ---------------------------------------------------------------------------
 
-function summarizeIssueLike(item: SnykItem) {
-  const attrs: Record<string, unknown> = item?.attributes ?? {};
+function isPackageIssueRepresentation(
+  representation: PackageIssueRepresentation,
+): representation is Extract<
+  PackageIssueRepresentation,
+  { package?: unknown }
+> {
+  return 'package' in representation;
+}
 
-  const coordinates = Array.isArray(attrs.coordinates)
-    ? (attrs.coordinates as Record<string, unknown>[]).map(
-        (c: Record<string, unknown>) => {
-          const reps = Array.isArray(c.representations)
-            ? (c.representations as Record<string, unknown>[]).map(
-                (r: Record<string, unknown>) => {
-                  const loc = r?.sourceLocation as
-                    Record<string, unknown> | undefined;
-                  return {
-                    id: r?.id as string | undefined,
-                    type: r?.type as string | undefined,
-                    identity: r?.identity as string | undefined,
-                    packageName: (r?.package_name ?? r?.packageName) as
-                      string | undefined,
-                    packageVersion: normalizeVersion(
-                      r?.package_version ?? r?.packageVersion,
-                    ),
-                    purl: r?.purl as string | undefined,
-                    file: loc?.file as string | undefined,
-                    commitId: loc?.commit_id as string | undefined,
-                    region: loc?.region as Record<string, unknown> | undefined,
-                  };
-                },
-              )
-            : [];
-          const remedies = Array.isArray(c.remedies)
-            ? c.remedies.map((r: Record<string, unknown>) => {
-                const details =
-                  typeof r?.details === 'object' && r?.details !== null
-                    ? (r.details as Record<string, unknown>)
-                    : {};
-                return {
-                  id: r?.id,
-                  type: r?.type,
-                  description: r?.description,
-                  details: {
-                    ...details,
-                    upgradePackage:
-                      (details['upgrade_package'] as
-                        string | null | undefined) ??
-                      (details['upgradePackage'] as
-                        string | null | undefined) ??
-                      null,
-                  },
-                };
-              })
-            : [];
-          return {
-            state: c.state,
-            createdAt: c.created_at,
-            resolvedAt: c.last_resolved_at,
-            isFixableManually: c.is_fixable_manually,
-            isFixableSnyk: c.is_fixable_snyk,
-            isFixableUpstream: c.is_fixable_upstream,
-            remedies,
-            representations: reps,
-          };
-        },
-      )
-    : [];
-
-  const risk = (attrs.risk ?? {}) as Record<string, unknown>;
-  const classes = Array.isArray(attrs.classes)
-    ? (attrs.classes as Record<string, unknown>[]).map(
-        (c: Record<string, unknown>) => ({
-          id: c.id as string | undefined,
-          type: c.type as string | undefined,
-          source: c.source as string | undefined,
-        }),
-      )
-    : [];
-  const problems = Array.isArray(attrs.problems)
-    ? (attrs.problems as Record<string, unknown>[]).map(
-        (p: Record<string, unknown>) => ({
-          id: p.id as string | undefined,
-          type: p.type as string | undefined,
-          source: p.source as string | undefined,
-        }),
-      )
-    : [];
-
+function summarizeRestCoordinate(
+  coordinate: RestIssueCoordinate,
+): CoordinateSummary {
   return {
-    issueKey: attrs.key as string | undefined,
-    title: attrs.title as string | undefined,
-    description: attrs.description as string | undefined,
-    type: attrs.type as string | undefined,
-    effectiveSeverityLevel: attrs.effective_severity_level as
-      string | undefined,
-    status: attrs.status as string | undefined,
-    ignored: attrs.ignored as boolean | undefined,
-    createdAt: attrs.created_at as string | undefined,
-    updatedAt: attrs.updated_at as string | undefined,
-    classes,
-    problems,
-    coordinates: coordinates as CoordinateSummary[],
-    risk: {
-      score: (risk['score'] as Record<string, unknown> | undefined)?.value,
-      model: (risk['score'] as Record<string, unknown> | undefined)?.model,
-      factors: risk['factors'],
-    },
-    resolution: attrs.resolution,
+    state: coordinate.state,
+    createdAt: coordinate.created_at,
+    resolvedAt: coordinate.last_resolved_at,
+    isFixableManually: coordinate.is_fixable_manually,
+    isFixableSnyk: coordinate.is_fixable_snyk,
+    isFixableUpstream: coordinate.is_fixable_upstream,
+    remedies: (coordinate.remedies ?? []).map((remedy) => {
+      const fixedIn = parseUpgradePackageValue(remedy.meta?.data.fixed_in);
+      return {
+        type: remedy.type,
+        description: remedy.description,
+        details: {
+          upgradePackage: fixedIn,
+          fixedIn,
+          schemaVersion: remedy.meta?.schema_version,
+        },
+      };
+    }),
+    representations: (coordinate.representations ?? []).map(
+      (representation) => {
+        if ('dependency' in representation) {
+          return {
+            packageName: representation.dependency.package_name,
+            packageVersion: normalizeVersion(
+              representation.dependency.package_version,
+            ),
+          };
+        }
+
+        if ('sourceLocation' in representation) {
+          return {
+            file: representation.sourceLocation.file,
+            commitId: representation.sourceLocation.commit_id,
+            region: representation.sourceLocation.region,
+          };
+        }
+
+        if ('resourcePath' in representation) {
+          return {
+            resourcePath: representation.resourcePath,
+          };
+        }
+
+        return {
+          type: 'cloud_resource',
+        };
+      },
+    ),
   };
 }
 
-export function summarizeRestIssue(item: SnykItem): RestIssueSummary {
-  const scanItemRelationship = item?.relationships?.scan_item?.data;
-  const organizationRelationship = item?.relationships?.organization?.data;
+function summarizePackageCoordinate(
+  coordinate: PackageIssueCoordinate,
+): CoordinateSummary {
+  return {
+    remedies: (coordinate.remedies ?? []).map((remedy) => ({
+      type: remedy.type,
+      description: remedy.description,
+      details: {
+        upgradePackage: parseUpgradePackageValue(
+          remedy.details?.upgrade_package,
+        ),
+      },
+    })),
+    representations: coordinate.representations.map((representation) => {
+      if (isPackageIssueRepresentation(representation)) {
+        return {
+          packageName: representation.package?.name,
+          packageVersion: normalizeVersion(representation.package?.version),
+          purl: representation.package?.url ?? null,
+        };
+      }
+
+      return {
+        resourcePath: representation.resource_path,
+      };
+    }),
+  };
+}
+
+function summarizeRestIssueBase(attributes: RestIssueAttributes) {
+  return {
+    issueKey: attributes.key,
+    title: attributes.title,
+    description: attributes.description,
+    type: attributes.type,
+    effectiveSeverityLevel: attributes.effective_severity_level,
+    status: attributes.status,
+    ignored: attributes.ignored,
+    createdAt: attributes.created_at,
+    updatedAt: attributes.updated_at,
+    classes: (attributes.classes ?? []).map((item) => ({
+      id: item.id,
+      type: item.type,
+      source: item.source,
+    })),
+    problems: (attributes.problems ?? []).map((item) => ({
+      id: item.id,
+      type: item.type,
+      source: item.source,
+    })),
+    coordinates: (attributes.coordinates ?? []).map(summarizeRestCoordinate),
+    risk: {
+      score: attributes.risk?.score?.value,
+      model: attributes.risk?.score?.model,
+      factors: attributes.risk?.factors,
+      exploitMaturityLevels: attributes.exploit_details?.maturity_levels,
+    },
+    resolution: attributes.resolution,
+  };
+}
+
+function summarizePackageIssueBase(attributes: PackageIssueAttributes) {
+  return {
+    title: attributes.title,
+    description: attributes.description,
+    type: attributes.type,
+    effectiveSeverityLevel: attributes.effective_severity_level,
+    createdAt: attributes.created_at,
+    updatedAt: attributes.updated_at,
+    classes: [],
+    problems: (attributes.problems ?? []).map((item) => ({
+      id: item.id,
+      source: item.source,
+    })),
+    coordinates: (attributes.coordinates ?? []).map(summarizePackageCoordinate),
+    risk: {},
+  };
+}
+
+export function summarizeRestIssue(item: RestIssue): RestIssueSummary {
+  const scanItemRelationship = item.relationships.scan_item.data;
+  const organizationRelationship = item.relationships.organization.data;
 
   return {
-    restIssueId: item?.id ?? '',
-    ...summarizeIssueLike(item),
-    scanItemId: Array.isArray(scanItemRelationship)
-      ? (scanItemRelationship[0]?.id ?? undefined)
-      : (scanItemRelationship?.id ?? undefined),
-    organizationId: Array.isArray(organizationRelationship)
-      ? (organizationRelationship[0]?.id ?? undefined)
-      : (organizationRelationship?.id ?? undefined),
+    restIssueId: item.id,
+    ...summarizeRestIssueBase(item.attributes),
+    scanItemId: scanItemRelationship.id,
+    organizationId: organizationRelationship.id,
   };
 }
 
 export function summarizePackageVulnerability(
-  item: SnykItem,
+  item: PackageIssue,
 ): PackageVulnerabilitySummary {
+  const attributes = item.attributes ?? {};
+
   return {
-    vulnerabilityId: item?.id ?? '',
-    ...summarizeIssueLike(item),
+    vulnerabilityId: item.id ?? '',
+    ...summarizePackageIssueBase(attributes),
   };
 }
 
@@ -187,17 +238,17 @@ function buildListIssuesQuery({
 
   const restIssueType = mapIssueTypeToRest(issueType);
   if (restIssueType) {
-    query.type = restIssueType as SnykIssueTypeFilter;
+    query.type = restIssueType satisfies SnykIssueTypeFilter;
   }
 
   if (severity) {
-    query.effective_severity_level = [severity] as SnykSeverityFilter[];
+    query.effective_severity_level = [severity] satisfies SnykSeverityFilter[];
   }
 
   if (status === 'ignored') {
     query.ignored = true;
-  } else if (status) {
-    query.status = [status] as SnykStatusFilter[];
+  } else if (status === 'open' || status === 'resolved') {
+    query.status = [status] satisfies SnykStatusFilter[];
   }
 
   if (scanItemId) {
@@ -297,6 +348,9 @@ export function registerIssueTools(server: McpServer) {
       },
     },
     async ({ orgId, projectId, issueType, severity, status, limit }) => {
+      requireUuid('orgId', orgId);
+      requireUuid('projectId', projectId);
+
       const apiVersion = resolveRestApiVersion();
       const data = snykRestApi.expectData(
         await snykRestApi.client.GET('/orgs/{org_id}/issues', {
@@ -377,6 +431,8 @@ export function registerIssueTools(server: McpServer) {
       },
     },
     async ({ orgId, issueType, severity, status, limit }) => {
+      requireUuid('orgId', orgId);
+
       const apiVersion = resolveRestApiVersion();
       const data = snykRestApi.expectData(
         await snykRestApi.client.GET('/orgs/{org_id}/issues', {
@@ -443,6 +499,8 @@ export function registerIssueTools(server: McpServer) {
       },
     },
     async ({ orgId, restIssueId }) => {
+      requireUuid('orgId', orgId);
+
       const apiVersion = resolveRestApiVersion();
 
       requireRestIssueUuid('snyk_get_issue_detail', restIssueId);

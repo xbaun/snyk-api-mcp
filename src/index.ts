@@ -5,6 +5,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 
 import { registerAnalysisTools } from './tools/analysis.js';
 import { registerIssueTools } from './tools/issues.js';
+import { registerLedgerSeedTool } from './tools/ledger-seed.js';
 import { registerOnboardingTool } from './tools/onboarding.js';
 import { registerOrgTools } from './tools/orgs.js';
 import { serverVersion } from './version.js';
@@ -18,6 +19,7 @@ registerOnboardingTool(server);
 registerOrgTools(server);
 registerIssueTools(server);
 registerAnalysisTools(server);
+registerLedgerSeedTool(server);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
