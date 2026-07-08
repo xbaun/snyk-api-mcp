@@ -1,9 +1,18 @@
 import createClient from 'openapi-fetch';
 
 import { env } from '../config.js';
+import type { paths as v1Paths } from './types/snyk-api-v1-types.d.ts';
 import type { components, paths } from './types/snyk-rest.d.ts';
 
 const JSON_API_CONTENT_TYPE = 'application/vnd.api+json';
+
+type SnykApiName = 'REST' | 'V1';
+
+type OpenApiFetchResult<T> = {
+  data?: T;
+  error?: unknown;
+  response: Response;
+};
 
 async function snykFetch(input: RequestInfo | URL, init?: RequestInit) {
   const url =
@@ -20,15 +29,72 @@ async function snykFetch(input: RequestInfo | URL, init?: RequestInit) {
   }
 }
 
-export const snykRestClient = createClient<paths>({
-  baseUrl: `${env.SNYK_API_BASE}/rest`,
-  fetch: snykFetch,
-  headers: {
-    Authorization: `token ${env.SNYK_TOKEN}`,
-    Accept: JSON_API_CONTENT_TYPE,
-    'Content-Type': JSON_API_CONTENT_TYPE,
-  },
+function expectSnykApiData<T>(
+  apiName: SnykApiName,
+  result: OpenApiFetchResult<T>,
+) {
+  if (result.error) {
+    throw new Error(
+      `Snyk ${apiName} API error ${result.response.status} ${result.response.statusText}\nURL: ${result.response.url}\nResponse: ${formatSnykError(result.error)}`,
+    );
+  }
+
+  if (typeof result.data === 'undefined') {
+    throw new Error(
+      `Snyk ${apiName} API returned no data\nURL: ${result.response.url}`,
+    );
+  }
+
+  return result.data;
+}
+
+function createSnykApiClient<TPaths extends object>({
+  apiName,
+  basePath,
+  accept,
+  contentType,
+}: {
+  apiName: SnykApiName;
+  basePath: '/rest' | '/v1';
+  accept: string;
+  contentType: string;
+}) {
+  const client = createClient<TPaths>({
+    baseUrl: `${env.SNYK_API_BASE}${basePath}`,
+    fetch: snykFetch,
+    headers: {
+      Authorization: `token ${env.SNYK_TOKEN}`,
+      Accept: accept,
+      'Content-Type': contentType,
+    },
+  });
+
+  return {
+    apiName,
+    baseUrl: `${env.SNYK_API_BASE}${basePath}`,
+    client,
+    expectData<T>(result: OpenApiFetchResult<T>) {
+      return expectSnykApiData(apiName, result);
+    },
+  };
+}
+
+export const snykRestApi = createSnykApiClient<paths>({
+  apiName: 'REST',
+  basePath: '/rest',
+  accept: JSON_API_CONTENT_TYPE,
+  contentType: JSON_API_CONTENT_TYPE,
 });
+
+export const snykV1Api = createSnykApiClient<v1Paths>({
+  apiName: 'V1',
+  basePath: '/v1',
+  accept: 'application/json',
+  contentType: 'application/json',
+});
+
+export const snykRestClient = snykRestApi.client;
+export const snykV1Client = snykV1Api.client;
 
 function formatSnykError(error: unknown) {
   if (typeof error === 'string') return error;
@@ -41,49 +107,16 @@ function formatSnykError(error: unknown) {
   }
 }
 
-export function expectSnykRestData<T>(result: {
-  data?: T;
-  error?: unknown;
-  response: Response;
-}) {
-  if (result.error) {
-    throw new Error(
-      `Snyk API error ${result.response.status} ${result.response.statusText}\nURL: ${result.response.url}\nResponse: ${formatSnykError(result.error)}`,
-    );
-  }
-
-  if (typeof result.data === 'undefined') {
-    throw new Error(`Snyk API returned no data\nURL: ${result.response.url}`);
-  }
-
-  return result.data;
+export function resolveRestApiVersion() {
+  return env.SNYK_API_VERSION;
 }
 
-export async function snykGetRaw(path: string, accept = 'application/json') {
-  const url = `${env.SNYK_API_BASE}${path}`;
+export function expectSnykRestData<T>(result: OpenApiFetchResult<T>) {
+  return snykRestApi.expectData(result);
+}
 
-  const response = await snykFetch(url, {
-    method: 'GET',
-    headers: {
-      Authorization: `token ${env.SNYK_TOKEN}`,
-      Accept: accept,
-      'Content-Type': accept,
-    },
-  });
-
-  const text = await response.text();
-
-  if (!response.ok) {
-    throw new Error(
-      `Snyk API error ${response.status} ${response.statusText}\nURL: ${url}\nResponse: ${text}`,
-    );
-  }
-
-  try {
-    return JSON.parse(text);
-  } catch {
-    return text;
-  }
+export function expectSnykV1Data<T>(result: OpenApiFetchResult<T>) {
+  return snykV1Api.expectData(result);
 }
 
 export type SnykIssueTypeFilter = components['schemas']['IssueTypeFilter'];

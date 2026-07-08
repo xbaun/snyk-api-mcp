@@ -48,9 +48,8 @@ export type CoordinateSummary = {
   representations: Array<Record<string, unknown>>;
 };
 
-export type IssueSummary = {
-  id: string;
-  key?: string;
+type IssueSummaryBase = {
+  issueKey?: string;
   title?: string;
   description?: string;
   type?: string;
@@ -64,9 +63,20 @@ export type IssueSummary = {
   coordinates: CoordinateSummary[];
   risk: { score?: unknown; model?: unknown; factors?: unknown };
   resolution?: unknown;
+};
+
+export type RestIssueSummary = IssueSummaryBase & {
+  restIssueId: string;
   scanItemId?: string;
   organizationId?: string;
 };
+
+export type PackageVulnerabilitySummary = IssueSummaryBase & {
+  vulnerabilityId: string;
+};
+
+export type NormalizedIssueSummary =
+  RestIssueSummary | PackageVulnerabilitySummary;
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -78,8 +88,8 @@ export function looksLikeUuid(value: string): boolean {
   );
 }
 
-export function requireRestIssueUuid(toolName: string, issueId: string) {
-  if (looksLikeUuid(issueId)) return;
+export function requireRestIssueUuid(toolName: string, restIssueId: string) {
+  if (looksLikeUuid(restIssueId)) return;
 
   throw new Error(
     `${toolName} requires a REST API issue UUID. ` +

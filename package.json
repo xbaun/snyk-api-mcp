@@ -1,7 +1,7 @@
 {
   "name": "@xbaun/snyk-api-mcp",
   "version": "0.0.0-development",
-  "description": "MCP server exposing the Snyk REST API as tools for AI coding agents.",
+  "description": "MCP server exposing Snyk REST discovery/detail flows plus V1 path analysis for AI coding agents.",
   "type": "module",
   "main": "build/index.js",
   "bin": {
@@ -21,8 +21,8 @@
     "start": "node build/index.js",
     "lint": "pnpm exec eslint .",
     "lint:fix": "pnpm exec eslint . --fix",
-    "gen:synk-rest": "pnpm exec openapi-typescript https://api.snyk.io/rest/openapi/2026-03-25 -o src/snyk/types/snyk-rest.d.ts",
-    "gen:synk-api-v1": "pnpm exec openapi-typescript specs/snyk_v1-api-spec.yaml -o src/snyk/types/snyk-api-v1-types.d.ts",
+    "gen:snyk-rest": "pnpm exec openapi-typescript https://api.snyk.io/rest/openapi/2026-03-25 -o src/snyk/types/snyk-rest.d.ts",
+    "gen:snyk-api-v1": "pnpm exec openapi-typescript specs/snyk_v1-api-spec.yaml -o src/snyk/types/snyk-api-v1-types.d.ts",
     "prepare": "husky"
   },
   "keywords": [],

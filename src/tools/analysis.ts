@@ -1,14 +1,13 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
-import { env } from '../config.js';
 import {
-  expectSnykRestData,
-  snykGetRaw,
-  snykRestClient,
+  resolveRestApiVersion,
+  snykRestApi,
+  snykV1Api,
 } from '../snyk/client.js';
 import type {
-  IssueSummary,
+  NormalizedIssueSummary,
   NormalizedPathNode,
   PathSummary,
   SnykItem,
@@ -24,13 +23,18 @@ import {
   uniqueStrings,
 } from '../utils/helpers.js';
 import { encodePurl } from '../utils/purl.js';
-import { resolveIssueKeyFromRestId, summarizeIssueV3 } from './issues.js';
+import {
+  resolveIssueKeyFromRestId,
+  summarizePackageVulnerability,
+} from './issues.js';
 
 // ---------------------------------------------------------------------------
 // Extract fix versions from an issue (domain-specific, stays here)
 // ---------------------------------------------------------------------------
 
-function extractIssueFixVersions(issue: IssueSummary | null): string[] {
+function extractIssueFixVersions(
+  issue: NormalizedIssueSummary | null,
+): string[] {
   if (!issue) return [];
 
   const coordinates = Array.isArray(issue.coordinates) ? issue.coordinates : [];
@@ -126,10 +130,6 @@ export function registerAnalysisTools(server: McpServer) {
         purl: z
           .string()
           .describe('Exact package URL, e.g. pkg:npm/lodash@4.17.15'),
-        version: z
-          .string()
-          .optional()
-          .describe('Snyk REST API version, e.g. 2026-03-25'),
         perPage: z
           .number()
           .optional()
@@ -137,8 +137,8 @@ export function registerAnalysisTools(server: McpServer) {
           .describe('How many project issue paths to request (max 1000).'),
       },
     },
-    async ({ orgId, projectId, restIssueId, purl, version, perPage }) => {
-      const apiVersion = version || env.SNYK_API_VERSION;
+    async ({ orgId, projectId, restIssueId, purl, perPage }) => {
+      const apiVersion = resolveRestApiVersion();
       requireRestIssueUuid('snyk_get_project_issue_analysis', restIssueId);
 
       const { restIssue, issueKey } = await resolveIssueKeyFromRestId(
@@ -147,20 +147,26 @@ export function registerAnalysisTools(server: McpServer) {
         apiVersion,
       );
 
-      const pathData = await snykGetRaw(
-        `/v1/org/${encodeURIComponent(orgId)}` +
-          `/project/${encodeURIComponent(projectId)}` +
-          `/issue/${encodeURIComponent(issueKey)}` +
-          `/paths?perPage=${encodeURIComponent(String(perPage))}&page=1`,
-        'application/json',
+      const pathData = snykV1Api.expectData(
+        await snykV1Api.client.GET(
+          '/org/{orgId}/project/{projectId}/issue/{issueId}/paths',
+          {
+            params: {
+              path: { orgId, projectId, issueId: issueKey },
+              query: { perPage, page: 1 },
+            },
+          },
+        ),
       );
 
-      const rawPaths = Array.isArray(pathData?.paths) ? pathData.paths : [];
+      const rawPaths = (
+        Array.isArray(pathData?.paths) ? pathData.paths : []
+      ) as SnykPathNode[][];
       const pathSummaries = rawPaths.map(summarizeIssuePath);
       const shortestPath = pathSummaries[0] ?? null;
 
-      const pkgData = expectSnykRestData(
-        await snykRestClient.GET('/orgs/{org_id}/packages/{purl}/issues', {
+      const pkgData = snykRestApi.expectData(
+        await snykRestApi.client.GET('/orgs/{org_id}/packages/{purl}/issues', {
           params: {
             path: { org_id: orgId, purl: encodePurl(purl) },
             query: { version: apiVersion, limit: 1000 },
@@ -171,7 +177,7 @@ export function registerAnalysisTools(server: McpServer) {
       const match = pkgItems.find(
         (item: SnykItem) => item?.attributes?.key === issueKey,
       );
-      const packageIssue = match ? summarizeIssueV3(match) : null;
+      const packageIssue = match ? summarizePackageVulnerability(match) : null;
 
       const remediationFixVersions = uniqueStrings([
         ...extractIssueFixVersions(packageIssue),
@@ -187,23 +193,18 @@ export function registerAnalysisTools(server: McpServer) {
           pathSummaries
             .map((path: PathSummary) => path.directDependency)
             .filter(Boolean)
-            .map((dep: NormalizedPathNode) =>
-              formatPackageLabel(dep.name, dep.version),
+            .map((dep: PathSummary['directDependency']) =>
+              dep ? formatPackageLabel(dep.name, dep.version) : '',
             ),
         ),
       );
 
       const result = {
-        query: {
-          orgId,
-          projectId,
-          restIssueId,
-          purl,
-          apiVersion,
-        },
+        query: { orgId, projectId, restIssueId, purl },
         issue: {
           restIssueId,
           issueKey,
+          vulnerabilityId: packageIssue?.vulnerabilityId ?? null,
           title: restIssue?.title ?? packageIssue?.title ?? null,
           severity:
             restIssue?.effectiveSeverityLevel ??
@@ -216,6 +217,8 @@ export function registerAnalysisTools(server: McpServer) {
         },
         package: {
           purl,
+          vulnerabilityId: packageIssue?.vulnerabilityId ?? null,
+          issueKey: packageIssue?.issueKey ?? issueKey,
           fixedIn: selectedPackageFixVersion,
           vulnerableRangeFromDb:
             packageIssue?.description?.match(/versions\s+(.+?)\n/i)?.[1] ??
@@ -252,7 +255,7 @@ export function registerAnalysisTools(server: McpServer) {
     'snyk_get_package_issue_description',
     {
       description:
-        'Get Snyk security issues for a package PURL. ' +
+        'Get Snyk direct package vulnerabilities for a package PURL. ' +
         'Returns up to 1000 issues — the payload can be large.',
       inputSchema: {
         orgId: z
@@ -261,18 +264,14 @@ export function registerAnalysisTools(server: McpServer) {
             'Snyk Organization ID. Use snyk_resolve_org_id if you only have a slug.',
           ),
         purl: z.string().describe('Package URL, e.g. pkg:npm/lodash@4.17.15'),
-        version: z
-          .string()
-          .optional()
-          .describe('Optional Snyk REST API version, e.g. 2026-03-25'),
       },
     },
-    async ({ orgId, purl, version }) => {
-      const apiVersion = version || env.SNYK_API_VERSION;
+    async ({ orgId, purl }) => {
+      const apiVersion = resolveRestApiVersion();
       const encodedPurl = encodePurl(purl);
 
-      const data = expectSnykRestData(
-        await snykRestClient.GET('/orgs/{org_id}/packages/{purl}/issues', {
+      const data = snykRestApi.expectData(
+        await snykRestApi.client.GET('/orgs/{org_id}/packages/{purl}/issues', {
           params: {
             path: { org_id: orgId, purl: encodedPurl },
             query: { version: apiVersion, limit: 1000 },
@@ -283,14 +282,13 @@ export function registerAnalysisTools(server: McpServer) {
       const items = Array.isArray(data?.data) ? data.data : [];
 
       const result = {
-        query: {
-          orgId,
-          purl,
-          apiVersion,
-        },
-        issueCount: items.length,
-        issues: items.length <= 50 ? items.map(summarizeIssueV3) : undefined,
-        issuesTruncated: items.length > 50,
+        query: { orgId, purl },
+        vulnerabilityCount: items.length,
+        packageVulnerabilities:
+          items.length <= 50
+            ? items.map(summarizePackageVulnerability)
+            : undefined,
+        vulnerabilitiesTruncated: items.length > 50,
       };
 
       return {
@@ -323,16 +321,10 @@ export function registerAnalysisTools(server: McpServer) {
           ),
         page: z.number().optional().default(1),
         perPage: z.number().optional().default(1000),
-        version: z
-          .string()
-          .optional()
-          .describe(
-            'Snyk REST API version used to resolve the issue key for the dependency-path endpoint.',
-          ),
       },
     },
-    async ({ orgId, projectId, restIssueId, page, perPage, version }) => {
-      const apiVersion = version || env.SNYK_API_VERSION;
+    async ({ orgId, projectId, restIssueId, page, perPage }) => {
+      const apiVersion = resolveRestApiVersion();
       requireRestIssueUuid('snyk_get_project_issue_paths', restIssueId);
 
       const { issueKey } = await resolveIssueKeyFromRestId(
@@ -341,23 +333,20 @@ export function registerAnalysisTools(server: McpServer) {
         apiVersion,
       );
 
-      const data = await snykGetRaw(
-        `/v1/org/${encodeURIComponent(orgId)}` +
-          `/project/${encodeURIComponent(projectId)}` +
-          `/issue/${encodeURIComponent(issueKey)}` +
-          `/paths?perPage=${encodeURIComponent(String(perPage))}&page=${encodeURIComponent(String(page))}`,
-        'application/json',
+      const data = snykV1Api.expectData(
+        await snykV1Api.client.GET(
+          '/org/{orgId}/project/{projectId}/issue/{issueId}/paths',
+          {
+            params: {
+              path: { orgId, projectId, issueId: issueKey },
+              query: { perPage, page },
+            },
+          },
+        ),
       );
 
       const result = {
-        query: {
-          orgId,
-          projectId,
-          restIssueId,
-          page,
-          perPage,
-          apiVersion,
-        },
+        query: { orgId, projectId, restIssueId, page, perPage },
         issueKey,
         snapshotId: data?.snapshotId,
         total: data?.total,

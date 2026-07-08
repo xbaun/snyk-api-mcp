@@ -7,10 +7,11 @@ import { registerAnalysisTools } from './tools/analysis.js';
 import { registerIssueTools } from './tools/issues.js';
 import { registerOnboardingTool } from './tools/onboarding.js';
 import { registerOrgTools } from './tools/orgs.js';
+import { serverVersion } from './version.js';
 
 const server = new McpServer({
   name: 'snyk-api-mcp',
-  version: '0.2.0',
+  version: serverVersion,
 });
 
 registerOnboardingTool(server);

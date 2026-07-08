@@ -1,8 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
-import { env } from '../config.js';
-import { expectSnykRestData, snykRestClient } from '../snyk/client.js';
+import { resolveRestApiVersion, snykRestApi } from '../snyk/client.js';
 import type { SnykItem } from '../utils/helpers.js';
 
 export function registerOrgTools(server: McpServer) {
@@ -23,11 +22,13 @@ export function registerOrgTools(server: McpServer) {
       },
     },
     async ({ orgSlug }) => {
-      const data = expectSnykRestData(
-        await snykRestClient.GET('/orgs', {
+      const apiVersion = resolveRestApiVersion();
+
+      const data = snykRestApi.expectData(
+        await snykRestApi.client.GET('/orgs', {
           params: {
             query: {
-              version: env.SNYK_API_VERSION,
+              version: apiVersion,
               limit: 100,
             },
           },
@@ -97,17 +98,13 @@ export function registerOrgTools(server: McpServer) {
           .describe(
             'Filter projects by target ID (UUID). Use snyk_get_targets first to find the target ID for a repository.',
           ),
-        version: z
-          .string()
-          .optional()
-          .describe('Snyk REST API version, e.g. 2026-03-25'),
       },
     },
-    async ({ orgId, targetId, version }) => {
-      const apiVersion = version || env.SNYK_API_VERSION;
+    async ({ orgId, targetId }) => {
+      const apiVersion = resolveRestApiVersion();
 
-      const data = expectSnykRestData(
-        await snykRestClient.GET('/orgs/{org_id}/projects', {
+      const data = snykRestApi.expectData(
+        await snykRestApi.client.GET('/orgs/{org_id}/projects', {
           params: {
             path: { org_id: orgId },
             query: {
@@ -139,7 +136,7 @@ export function registerOrgTools(server: McpServer) {
             type: 'text',
             text: JSON.stringify(
               {
-                query: { orgId, targetId, apiVersion },
+                query: { orgId, targetId },
                 matchCount: projects.length,
                 projects,
               },
@@ -176,17 +173,13 @@ export function registerOrgTools(server: McpServer) {
             'Filter targets by display name (URL-encoded). ' +
               "E.g. 'my-github-org/my-repo' for the target with that display name.",
           ),
-        version: z
-          .string()
-          .optional()
-          .describe('Snyk REST API version, e.g. 2026-03-25'),
       },
     },
-    async ({ orgId, displayName, version }) => {
-      const apiVersion = version || env.SNYK_API_VERSION;
+    async ({ orgId, displayName }) => {
+      const apiVersion = resolveRestApiVersion();
 
-      const data = expectSnykRestData(
-        await snykRestClient.GET('/orgs/{org_id}/targets', {
+      const data = snykRestApi.expectData(
+        await snykRestApi.client.GET('/orgs/{org_id}/targets', {
           params: {
             path: { org_id: orgId },
             query: {
@@ -215,7 +208,7 @@ export function registerOrgTools(server: McpServer) {
             type: 'text',
             text: JSON.stringify(
               {
-                query: { orgId, displayName, apiVersion },
+                query: { orgId, displayName },
                 matchCount: targets.length,
                 targets,
               },
