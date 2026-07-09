@@ -41,6 +41,9 @@ jobs:
       - name: Build package
         run: pnpm run build
 
+      - name: Build layout archive
+        run: pnpm run build:layout-archive
+
       - name: Release and publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

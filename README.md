@@ -1,102 +1,78 @@
-# Snyk API MCP Server
+# `snyk-api-mcp`
 
-An [MCP](https://modelcontextprotocol.io/) server for AI coding agents that combines:
+[![Release workflow](https://img.shields.io/github/actions/workflow/status/xbaun/snyk-api-mcp/release.yml?branch=main&label=release&logo=githubactions)](.github/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/xbaun/snyk-api-mcp?display_name=tag)](https://github.com/xbaun/snyk-api-mcp/releases)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D22-339933?logo=node.js&logoColor=white)](package.json)
+[![License](https://img.shields.io/badge/license-ISC-blue.svg)](package.json)
 
-- **Snyk REST API** for discovery, listing, and issue detail flows
-- **Snyk API v1** for dependency-path analysis where the legacy endpoint is still the better source
+Small, strict, agent-friendly MCP server for Snyk.
 
-If you are integrating this into a client, start with `snyk_onboarding`.
+It gives AI coding agents a **narrow and predictable** interface for common Snyk workflows: resolve an org, discover targets and projects, list issues, fetch issue detail, inspect dependency paths, and generate ledger seed documents for remediation loops.
 
-## What this server exposes
+## Why it is useful
 
-| Tool | Purpose |
-|------|---------|
-| `snyk_onboarding` | Overview of the toolset, identifier rules, and recommended workflow |
-| `snyk_resolve_org_id` | Resolve an exact Snyk org slug to an org UUID |
-| `snyk_get_targets` | List targets for an org, optionally filtered by display name |
-| `snyk_get_projects` | List projects for an org or target |
-| `snyk_get_target_ledger_seed` | Build the canonical target-scoped remediation seed with `issues[]` and `advisories[]` |
-| `snyk_get_project_ledger_seed` | Build the canonical project-scoped remediation seed with `issues[]` and `advisories[]` |
-| `snyk_get_project_issues` | List project issues with optional type, severity, and status filters |
-| `snyk_list_org_issues` | List issues across an org with explicit API filters |
-| `snyk_get_issue_detail` | Fetch a single REST issue resource by `restIssueId` |
-| `snyk_get_package_issue_description` | List direct package vulnerabilities for an exact PURL |
-| `snyk_get_project_issue_paths` | Resolve dependency paths for one project issue |
-| `snyk_get_project_package_vulnerability_analysis` | Compose a package_vulnerability-focused project analysis from REST issue data, V1 paths, and package vulnerability data |
+Most Snyk integrations are great for humans, but noisy for agents. This project keeps the surface area intentionally small:
 
-## Identifier model
+- **Strict identifiers** — `orgId`, `projectId`, `restIssueId`, `vulnerabilityId`, and `issueKey` are not treated as interchangeable.
+- **Focused workflows** — tools are split by job instead of collapsing everything into one vague query endpoint.
+- **Stable response shapes** — outputs stay predictable and easy for agents to reuse.
+- **REST + v1 bridge** — discovery and issue detail use modern Snyk REST APIs, while dependency-path analysis still leverages Snyk API v1 where it is stronger.
+- **Downloadable agent and skill definitions** — releases include a downloadable `layout/` archive with `.github/agents`, `.github/skills`, and `.snyk/` files for downstream repos.
 
-The MCP contract is intentionally strict about issue identifiers.
+## What the project does
 
-| Field | Format | Meaning |
-|------|--------|---------|
-| `orgId` | UUID | Snyk organization ID |
-| `projectId` | UUID | Snyk project ID |
-| `restIssueId` | UUID | Snyk REST issue resource ID |
-| `vulnerabilityId` | `SNYK-...` string | Snyk vulnerability identifier |
-| `issueKey` | opaque string | Internal bridge identifier used to map REST issues to V1 path endpoints |
+### Core workflows
 
-Do **not** treat `restIssueId`, `vulnerabilityId`, and `issueKey` as interchangeable.
+| Workflow | Tools |
+| --- | --- |
+| Onboarding | `snyk_onboarding` |
+| Org + target discovery | `snyk_resolve_org_id`, `snyk_get_targets`, `snyk_get_projects` |
+| Issue intake | `snyk_get_target_ledger_seed`, `snyk_get_project_ledger_seed` |
+| Issue investigation | `snyk_get_project_issues`, `snyk_list_org_issues`, `snyk_get_issue_detail` |
+| Dependency analysis | `snyk_get_project_issue_paths`, `snyk_get_project_package_vulnerability_analysis`, `snyk_get_package_issue_description` |
 
-## Typical workflow
+### Identifier model
 
-```text
-snyk_resolve_org_id
-  → snyk_get_targets
-  → snyk_get_target_ledger_seed
-or
-  → snyk_get_projects
-  → snyk_get_project_ledger_seed
-or
-  → snyk_get_projects
-  → snyk_get_project_issues
-  → snyk_get_issue_detail / snyk_get_project_issue_paths / snyk_get_project_package_vulnerability_analysis
-```
+| Field | Meaning |
+| --- | --- |
+| `orgId` | Snyk organization UUID |
+| `projectId` | Snyk project UUID |
+| `restIssueId` | Snyk REST issue resource UUID |
+| `vulnerabilityId` | Snyk vulnerability identifier such as `SNYK-JS-...` |
+| `issueKey` | Internal bridge key used for legacy path analysis |
 
-In practice:
+If you only remember one rule from this README, make it this one: **do not mix these identifiers**.
 
-1. Resolve the org UUID from the exact org slug.
-2. Choose whether you want a target-scoped remediation seed or a single-project remediation seed.
-3. Discover the target and/or the relevant project UUID.
-4. Use a ledger seed tool for session initialization, or list project issues to obtain a `restIssueId`.
-5. Use that `restIssueId` for detail lookups or dependency-path analysis.
+## Get started
 
-## Prerequisites
+### Prerequisites
 
-- Node.js >= 22
+- Node.js `>= 22`
 - `pnpm`
-- A Snyk API token
+- a Snyk API token
 
-## Install and build
+### Install and build
 
 ```sh
-cd snyk-api-mcp
 pnpm install
 pnpm run build
 ```
 
-## Runtime configuration
+### Runtime configuration
 
-The MCP server reads these environment variables:
+The server reads these environment variables at runtime:
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `SNYK_TOKEN` | yes | — | Snyk API token |
-| `SNYK_API_BASE` | no | `https://api.eu.snyk.io` | Snyk API base URL |
-| `SNYK_API_VERSION` | no | `2026-03-25` | Default REST API version |
+| Variable | Required | Default |
+| --- | --- | --- |
+| `SNYK_TOKEN` | yes | — |
+| `SNYK_API_BASE` | no | `https://api.eu.snyk.io` |
+| `SNYK_API_VERSION` | no | `2026-03-25` |
 
-### Important note about `.env`
+`.env` files are **not** loaded automatically by the server. MCP clients should pass these variables explicitly.
 
-`.env` files are **not** loaded automatically by the MCP server at runtime.
+### Quick client setup
 
-- For MCP clients such as VS Code, Claude Desktop, or OpenCode, pass env vars explicitly in the client configuration.
-- A local `.env` file is only useful for **internal debugging**, for example when you manually launch Node with an env-file flag or export vars in your shell first.
-
-## Client setup
-
-### VS Code / GitHub Copilot
-
-Add this to `.vscode/mcp.json`:
+Works with any stdio-based MCP client. A minimal VS Code / GitHub Copilot setup looks like this:
 
 ```jsonc
 {
@@ -122,191 +98,100 @@ Add this to `.vscode/mcp.json`:
 }
 ```
 
-### Claude Desktop
+## Typical workflow
 
-Add this to `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS or `%APPDATA%\\Claude\\claude_desktop_config.json` on Windows:
+Start with `snyk_onboarding`, then walk the identifiers forward step by step.
 
-```json
-{
-  "mcpServers": {
-    "snyk-api": {
-      "command": "node",
-      "args": ["/absolute/path/to/snyk-api-mcp/build/index.js"],
-      "env": {
-        "SNYK_TOKEN": "<your-snyk-token>",
-        "SNYK_API_BASE": "https://api.eu.snyk.io",
-        "SNYK_API_VERSION": "2026-03-25"
-      }
-    }
-  }
-}
+```mermaid
+flowchart TD
+    A[snyk_onboarding] --> B[snyk_resolve_org_id]
+    B --> C[snyk_get_targets]
+    C --> D[snyk_get_projects]
+    C --> E[snyk_get_target_ledger_seed]
+    D --> F[snyk_get_project_ledger_seed]
+    D --> G[snyk_get_project_issues]
+    G --> H[snyk_get_issue_detail]
+    G --> I[snyk_get_project_issue_paths]
+    G --> J[snyk_get_project_package_vulnerability_analysis]
 ```
 
-### OpenCode
-
-Add this to your OpenCode config:
-
-```json
-{
-  "mcp": {
-    "snyk-api": {
-      "type": "stdio",
-      "command": "node",
-      "args": ["/absolute/path/to/snyk-api-mcp/build/index.js"],
-      "env": {
-        "SNYK_TOKEN": "${SNYK_TOKEN}",
-        "SNYK_API_BASE": "https://api.eu.snyk.io",
-        "SNYK_API_VERSION": "2026-03-25"
-      }
-    }
-  }
-}
-```
-
-## Usage examples
-
-### Resolve an org and list critical project issues
+### Example flow
 
 ```text
-Agent: snyk_resolve_org_id(orgSlug: "my-snyk-org")
-→ { orgId: "d85409c5-..." }
-
-Agent: snyk_get_targets(orgId: "d85409c5-...", displayName: "my-org/my-repo")
-→ { targets: [{ id: "16dd3840-..." }] }
-
-Agent: snyk_get_target_ledger_seed(
-  orgId: "d85409c5-...",
-  targetId: "16dd3840-..."
-)
-→ target-scoped issues-ledger seed with issues[] and advisories[]
-
-Agent: snyk_get_projects(orgId: "d85409c5-...", targetId: "16dd3840-...")
-→ { projects: [{ id: "1454..." }] }
-
-Agent: snyk_get_project_issues(
-  orgId: "d85409c5-...",
-  projectId: "1454...",
-  issueType: "package_vulnerability",
-  severity: "critical",
-  status: "open"
-)
-→ issues with restIssueId, issueKey, severity, risk, and status
-
-### Build a project-scoped remediation seed
-
-```text
-Agent: snyk_get_projects(orgId: "d85409c5-...", targetId: "16dd3840-...")
-→ { projects: [{ id: "1454...", type: "pnpm" }] }
-
-Agent: snyk_get_project_ledger_seed(
-  orgId: "d85409c5-...",
-  projectId: "1454..."
-)
-→ project-scoped issues-ledger seed with issues[] and advisories[]
-```
+1. snyk_resolve_org_id(orgSlug)
+2. snyk_get_targets(orgId)
+3. snyk_get_projects(orgId, targetId)
+4. snyk_get_project_issues(orgId, projectId, issueType='package_vulnerability', severity='critical', status='open')
+5. snyk_get_issue_detail(...) or snyk_get_project_issue_paths(...)
 ```
 
-### Fetch full detail for one issue
+Use ledger seed tools when you want to initialize remediation sessions instead of manually iterating issues.
 
-```text
-Agent: snyk_get_issue_detail(
-  orgId: "d85409c5-...",
-  restIssueId: "a0f3809c-2c52-4d8f-8894-2f0c4a834f83"
-)
-→ full REST issue resource summary and raw response payload
+## Download agent and skill definitions
+
+Each GitHub release attaches `snyk-api-mcp-layout.tar.gz`.
+
+Use it to copy the repository `layout/` contents into another repository, including:
+
+- `.github/agents`
+- `.github/skills`
+- `.snyk/`
+
+Example:
+
+```sh
+curl -fsSL https://github.com/xbaun/snyk-api-mcp/releases/latest/download/snyk-api-mcp-layout.tar.gz \
+  | tar -xzf - -C .
 ```
 
-### Look up direct package vulnerabilities for a PURL
-
-```text
-Agent: snyk_get_package_issue_description(
-  orgId: "d85409c5-...",
-  purl: "pkg:npm/axios@1.7.0"
-)
-→ packageVulnerabilities with vulnerabilityId values
-```
-
-### Get dependency paths for one project issue
-
-```text
-Agent: snyk_get_project_issue_paths(
-  orgId: "d85409c5-...",
-  projectId: "1454...",
-  restIssueId: "a0f3809c-2c52-4d8f-8894-2f0c4a834f83"
-)
-→ issueKey bridge + V1 dependency paths
-```
-
-### Compose a package vulnerability analysis
-
-```text
-Agent: snyk_get_project_package_vulnerability_analysis(
-  orgId: "d85409c5-...",
-  projectId: "1454...",
-  restIssueId: "a0f3809c-2c52-4d8f-8894-2f0c4a834f83",
-  purl: "pkg:npm/esbuild@0.24.2"
-)
-→ REST issue metadata + package vulnerability context + dependency-path remediation hints
-```
+This is the fastest way to add the bundled agent and skill definitions to a downstream repo.
 
 ## Development
+
+### Common commands
 
 ```sh
 pnpm run dev
 pnpm run build
 pnpm run lint
-```
-
-### Type generation
-
-```sh
+pnpm run build:layout-archive
 pnpm run gen:snyk-rest
 pnpm run gen:snyk-api-v1
 ```
 
-Backward-compatible aliases for the old misspelled script names still exist:
-
-```sh
-pnpm run gen:synk-rest
-pnpm run gen:synk-api-v1
-```
-
-## Release
-
-- Releases are handled by `semantic-release`
-- Release branch: `main`
-- Package registry: `https://npm.pkg.github.com`
-- Published package name: `@<github-owner>/snyk-api-mcp`
-
-When the package is published, the published artifact gets the semantic-release version. In a development checkout, the server falls back to the latest release tag from `main` when `package.json` still carries the placeholder development version.
-
-## Architecture
+### Project shape
 
 ```text
-snyk-api-mcp/
-├── src/
-│   ├── index.ts
-│   ├── config.ts
-│   ├── version.ts
-│   ├── snyk/
-│   │   ├── client.ts
-│   │   └── types/
-│   └── tools/
-│       ├── onboarding.ts
-│       ├── orgs.ts
-│       ├── issues.ts
-│       └── analysis.ts
-├── build/
-├── README.md
-├── package.json
-└── tsconfig.json
+src/
+  index.ts                MCP bootstrap
+  tools/                  MCP tool definitions
+  snyk/client.ts          Snyk API access
+  utils/                  focused helpers
+layout/                   bundled agent and skill definitions for downstream repos
+docs/                     small reference docs
 ```
 
-- **Runtime:** Node.js ESM
-- **Validation:** Zod
-- **HTTP client:** `openapi-fetch`
-- **APIs:** Snyk REST + selective Snyk API v1 bridging
+## Help and documentation
+
+If you are using the server:
+
+- start with `snyk_onboarding`
+- use [identifier mapping notes](docs/snyk-issue-identifier-mapping.md) when a Snyk UI issue ID does not match the MCP contract
+- inspect [AGENTS.md](AGENTS.md) for the design philosophy behind the public tool surface
+- follow [CODING.md](CODING.md) for local consistency rules
+- open an issue at <https://github.com/xbaun/snyk-api-mcp/issues>
+
+## Maintainers and contributing
+
+This project is maintained by [`@xbaun`](https://github.com/xbaun) and contributors.
+
+Contributions are welcome via issues and pull requests. Before opening a PR:
+
+- keep the MCP contract strict and explicit
+- prefer extending existing patterns over adding abstractions
+- run `pnpm run build` and `pnpm run lint`
+- align with the repository guidance in [AGENTS.md](AGENTS.md) and [CODING.md](CODING.md)
 
 ## License
 
-ISC
+ISC.

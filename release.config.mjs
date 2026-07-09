@@ -9,6 +9,16 @@ export default {
         npmPublish: true,
       },
     ],
-    '@semantic-release/github',
+    [
+      '@semantic-release/github',
+      {
+        assets: [
+          {
+            path: 'build/snyk-api-mcp-layout.tar.gz',
+            label: 'Target project layout archive',
+          },
+        ],
+      },
+    ],
   ],
 };

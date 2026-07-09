@@ -1,10 +1,10 @@
 ## Codebase Consistency
 
-Do not blindly replicate patterns, structures, naming conventions, abstractions, or architectural decisions from other repositories, including website-monorepo.
+Do not blindly replicate patterns, structures, naming conventions, abstractions, or architectural decisions from other repositories.
 
 Before introducing new code, evaluate how the surrounding code within the current codebase is structured and integrate consistently with local conventions.
 
-Favor homogeneity over heterogeneity.
+Favor homogeneity over heterogeneity to reduce code fragmentation.
 
 A solution that aligns with established patterns in the current codebase is generally preferable to introducing a new style, abstraction, naming scheme, or architectural variation solely for theoretical improvements.
 
@@ -31,4 +31,19 @@ Apply:
 A small amount of duplication is often preferable to premature abstraction.
 
 The objective is not to maximize elegance in isolation, but to maximize coherence of the overall system.
-`
+
+## Scope of this file
+
+`CODING.md` is the foundation for code changes in this repository.
+
+Use it for:
+
+- codebase consistency
+- implementation style decisions
+- refactoring judgment
+- deciding when **not** to introduce a new abstraction
+
+Related documents:
+
+- `AGENTS.md` builds on this foundation with repo-specific guidance for coding agents, MCP contract rules, and workflow expectations.
+- `README.md` is user-facing and should stay focused on installation, usage, and contribution entry points.

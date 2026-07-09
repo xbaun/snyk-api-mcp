@@ -1,21 +1,38 @@
 # AGENTS.md
 
-## Codebase Consistency
+## Read this first
 
-Read ./CODING.md
+Start with [`CODING.md`](CODING.md).
 
-## Purpose
+`CODING.md` is the foundation for how code should feel in this repository:
+
+- consistent with local patterns
+- simple over clever
+- KISS and YAGNI by default
+- minimal abstraction unless there is a real, repeated need
+
+This file builds on that foundation. Use `AGENTS.md` for repository-specific product intent, MCP contract rules, workflow expectations, and agent operating guidance.
+
+## Document split
+
+Use the repository docs like this:
+
+- `CODING.md` — codebase consistency and implementation judgment
+- `AGENTS.md` — agent-facing repository rules and MCP contract guidance
+- `README.md` — user-facing setup, usage, and contribution entry points
+
+Do not duplicate the full coding guidance across all three files.
+
+## Repository purpose
 
 This repository builds a small, agent-friendly MCP layer around Snyk.
 
-The goal is **not** to create a clever abstraction over every part of Snyk. The goal is to expose the few workflows that agents actually need in a way that is:
+The goal is **not** to model every part of Snyk or invent a generic query system. The goal is to expose the few workflows that agents actually need in a way that is:
 
 - easy to discover
 - easy to call correctly
 - hard to misuse accidentally
 - stable in response shape
-
-This project follows **YAGNI** and **KISS** aggressively.
 
 ## What “agent-friendly” means here
 
@@ -29,30 +46,24 @@ It means the contract is:
 - **predictable** — responses keep a stable, readable structure
 - **honest** — invalid input should fail clearly instead of being guessed or silently corrected
 
-When in doubt, prefer a smaller and stricter interface over a flexible one.
+When in doubt, prefer a smaller and stricter interface over a more flexible one.
 
-## Design principles
+## Core rules for coding agents
 
-### 1. One tool, one clear responsibility
+### 1. Keep the MCP surface narrow
 
 Prefer a focused tool such as `snyk_get_project_issues` over a generic catch-all query tool.
 
-A tool should answer a specific user intent, not expose raw backend complexity.
+Add a new tool only when all of the following are true:
 
-### 2. Do not invent abstraction layers without a real need
+- it serves a real repeated workflow
+- existing tools cannot express that workflow cleanly
+- the contract can stay narrow and obvious
+- the output can stay stable and readable
 
-If a helper, option, or tool does not simplify a real agent workflow today, do not add it.
+If the change only saves one internal call but makes the public surface more confusing, do not add it.
 
-This especially applies to:
-
-- generic search/query tools
-- overloaded parameters
-- multi-mode tools with unrelated behaviors
-- "maybe useful later" output fields
-
-### 3. Be strict about identifiers
-
-The identifier model is intentional and must stay explicit.
+### 2. Be strict about identifiers
 
 Do not blur these concepts:
 
@@ -66,9 +77,9 @@ They are **not interchangeable**.
 
 If a workflow needs one specific identifier, require that exact field and name it exactly.
 
-### 4. Validate early and fail clearly
+### 3. Validate early and fail clearly
 
-Use schema validation to reject malformed or ambiguous input at the boundary.
+Validate inputs at the MCP boundary.
 
 Prefer:
 
@@ -77,9 +88,9 @@ Prefer:
 - explicit required fields
 - descriptive validation errors
 
-Do **not** add fuzzy matching, heuristic coercion, or silent fallbacks just to be forgiving.
+Do **not** add fuzzy matching, heuristic coercion, or silent fallbacks.
 
-### 5. Keep response shapes stable
+### 4. Keep response shapes stable
 
 Response payloads should be easy for an agent to scan and reuse.
 
@@ -96,15 +107,13 @@ Avoid:
 - deeply nested wrappers without value
 - mixing unrelated result types in one response
 
-### 6. Hide backend quirks, not domain meaning
+### 5. Hide backend quirks, not domain meaning
 
 This server may bridge Snyk REST and Snyk API v1 where necessary.
 
-That is good **only** when it simplifies the workflow for the caller.
+That is good only when it simplifies the workflow for the caller. Do not leak unnecessary transport details into the MCP contract, but do not flatten away important Snyk domain meaning just to look simple.
 
-Do not leak unnecessary transport or backend details into the MCP contract. But also do not flatten away important domain meaning just to look simple.
-
-### 7. Prefer explicit workflow over magical convenience
+### 6. Prefer explicit workflow over magical convenience
 
 This project intentionally favors a clear multi-step flow:
 
@@ -115,36 +124,37 @@ This project intentionally favors a clear multi-step flow:
 
 That is better than a “smart” tool that guesses too much from partial input.
 
-## Expected user workflow
+## Expected workflows
 
-A normal issue investigation flow looks like this:
+### Issue investigation
 
 1. `snyk_onboarding`
 2. `snyk_resolve_org_id`
 3. `snyk_get_targets`
-4. target-scoped intake via `snyk_get_target_ledger_seed`, project-scoped intake via `snyk_get_project_ledger_seed`, or project discovery via `snyk_get_projects`
+4. one of:
+   - `snyk_get_target_ledger_seed`
+   - `snyk_get_projects`
+   - `snyk_get_project_ledger_seed`
 5. `snyk_get_project_issues`
 6. one of:
    - `snyk_get_issue_detail`
    - `snyk_get_project_issue_paths`
    - `snyk_get_project_package_vulnerability_analysis`
 
-New tools should fit this style: explicit, stepwise, and understandable without hidden state.
+### Session and remediation intake
 
-## Change rules for contributors and agents
+Use:
 
-When changing this repository, follow these rules.
+- `snyk_get_target_ledger_seed` for target-wide intake
+- `snyk_get_project_ledger_seed` for single-project intake
 
-### Add a new tool only if all of this is true
+Persist returned seed documents unchanged. The current contract is intentional.
 
-- it serves a real repeated workflow
-- existing tools cannot express that workflow cleanly
-- the new tool can have a narrow, obvious contract
-- the output can stay stable and readable
+## Change guidance
 
-If the change only saves one internal call but makes the public surface more confusing, do not add it.
+### Parameters
 
-### Prefer narrower parameters
+Prefer narrower parameters.
 
 Good:
 
@@ -159,60 +169,31 @@ Bad:
 - freeform filter blobs when a few explicit fields are enough
 - parameters that mean different things in different modes
 
-### Prefer clear errors over tolerant behavior
-
-Good:
-
-- “`restIssueId` must be a UUID”
-- “`orgSlug` must match the exact Snyk org slug”
-- “Provide `projectId` when requesting project issue paths”
-
-Bad:
-
-- accepting multiple unrelated identifier formats in the same field
-- guessing whether an input is a slug, UUID, or display name
-- silently defaulting to behavior the caller did not request
-
-### Preserve naming consistency
+### Naming
 
 If the public contract already uses a field name, keep using it.
 
 Do not rename public fields casually. If a rename is truly necessary, treat it as a contract change and update documentation consistently.
 
-### Keep docs operational
+### Helpers and abstractions
 
-Tool descriptions and README examples should help an agent choose the correct next step quickly.
+- keep helpers private unless there is a clear shared need
+- do not extract abstractions just to make code look more generic
+- prefer straightforward code over framework-like internal architecture
 
-Prefer concrete wording like:
+### Dependencies
+
+Add dependencies sparingly. A new dependency should remove meaningful complexity, not add indirection.
+
+### Documentation
+
+Keep docs operational.
+
+Tool descriptions and README examples should help an agent choose the correct next step quickly. Prefer concrete wording such as:
 
 - what the tool requires
 - what identifier it returns
 - what the next likely tool is
-
-## Implementation guidance
-
-### Validation
-
-- Validate inputs at the MCP boundary.
-- Use strict schemas.
-- Make error messages specific and actionable.
-
-### Output modeling
-
-- Return the most useful normalized data first.
-- Include raw upstream payloads only when they materially help debugging or follow-up analysis.
-- Do not make callers dig through raw payloads for the main answer.
-
-### Internal helpers
-
-- Keep helpers private unless they support a real shared need.
-- Do not extract abstractions just to make code look more generic.
-- Prefer straightforward code over framework-like internal architecture.
-
-### Dependencies
-
-- Add dependencies sparingly.
-- A new dependency should remove meaningful complexity, not add indirection.
 
 ## Repository map
 
@@ -220,7 +201,8 @@ Prefer concrete wording like:
 - `src/tools/` — MCP tool definitions grouped by workflow
 - `src/snyk/client.ts` — Snyk API access layer
 - `src/utils/` — focused utilities, not a dumping ground
-- `README.md` — user-facing usage and workflow documentation
+- `layout/` — bundled agent and skill definitions for downstream repos
+- `README.md` — user-facing usage and setup
 
 ## Non-goals
 
@@ -231,14 +213,15 @@ This project is not trying to be:
 - a compatibility layer for every possible input style
 - a place for speculative abstraction
 
-## Practical test for changes
+## Agent self-check before finishing a change
 
-Before merging a change, ask:
+Before merging or handing back a change, ask:
 
-1. Does this make the MCP surface easier for an agent to understand?
-2. Does it reduce ambiguity rather than hide it?
-3. Is the input contract clearer, not looser?
-4. Is the output more predictable, not more clever?
-5. Would a new user understand the intended workflow from the tool names and docs alone?
+1. Did I follow `CODING.md` first?
+2. Does this make the MCP surface easier for an agent to understand?
+3. Does it reduce ambiguity rather than hide it?
+4. Is the input contract clearer, not looser?
+5. Is the output more predictable, not more clever?
+6. Would a new user understand the intended workflow from the tool names and docs alone?
 
 If the answer is no, the change is probably too complex.

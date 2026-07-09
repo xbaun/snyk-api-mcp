@@ -17,6 +17,7 @@
   },
   "scripts": {
     "build": "pnpm exec tsc",
+    "build:layout-archive": "node scripts/build-layout-archive.mjs",
     "dev": "pnpm exec tsx src/index.ts",
     "start": "node build/index.js",
     "lint": "pnpm exec eslint .",
