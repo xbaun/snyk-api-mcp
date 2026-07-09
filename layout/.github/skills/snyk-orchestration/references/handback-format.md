@@ -1,46 +1,46 @@
 # snyk-orchestration handback format
 
-## Zweck
+## Purpose
 
-Dieses Dokument definiert die **einzige zulässige Rückgabeform** von `snyk-resolve-dep` und `snyk-resolve-code` an `snyk-orchestration`.
+This document defines the only allowed return format from `snyk-resolve-dep` and `snyk-resolve-code` to `snyk-orchestration`.
 
 ## Ownership
 
-Dieses Dokument ist die **Single Source of Truth** für das Handback-Protokoll.
+This document is the single source of truth for the handback protocol.
 
-- `snyk-orchestration` validiert dagegen.
-- `snyk-resolve-dep` und `snyk-resolve-code` dürfen diese Struktur **nicht eigenständig neu definieren**.
-- Agent-Dateien sollen auf dieses Dokument verweisen, statt JSON-Shapes oder Feldlisten redundant zu duplizieren.
+- `snyk-orchestration` validates against it.
+- `snyk-resolve-dep` and `snyk-resolve-code` must not redefine it.
+- Agent files should point here instead of duplicating field lists or JSON shapes.
 
-## Global Rules
+## Global rules
 
-- Ausgabe ist **genau ein JSON-Objekt**.
-- Keine Markdown-Fences.
-- Kein Prosa-Vor- oder Nachspann.
-- Keine `null`-Werte; unbekannte Felder bleiben absent.
-- `issueType` muss exakt zum Handoff passen.
-- Das Objekt soll direkt als stdin-Payload für `ledger.py update --from-handback -` weiterverwendbar sein; ein temp Handback-File ist kein erforderlicher Teil des Protokolls.
+- Output is exactly one JSON object.
+- No Markdown fences.
+- No prose before or after the JSON.
+- No `null` values; omit unknown fields.
+- `issueType` must match the handoff exactly.
+- The object must be usable directly as stdin for `ledger.py update --from-handback -`.
 
-## Semantik-Grundregeln
+## Semantic baseline
 
-- `resolved` bedeutet: die konkrete Arbeitseinheit wurde innerhalb des erlaubten Scopes erfolgreich remediated.
-- `blocked` bedeutet: keine sichere oder zulässige automatische Remediation innerhalb des erlaubten Scopes.
-- `partially-resolved` bedeutet: es wurde nur ein Teil der Arbeitseinheit verbessert; dieser Zustand ist nur für `package_vulnerability` zulässig.
-- `implementation` beschreibt, **was tatsächlich geändert oder ausgeführt wurde**.
-- `verification` beschreibt, **welche Prüfungen tatsächlich gelaufen sind und mit welchem Ergebnis**.
-- `outcome` beschreibt, **was fachlich aus dem Lauf folgt**.
+- `resolved` = the work unit was remediated successfully within the allowed scope.
+- `blocked` = no safe or allowed automatic remediation exists within the allowed scope.
+- `partially-resolved` = only part of the work unit improved; this is valid only for `package_vulnerability`.
+- `implementation` describes what actually changed or ran.
+- `verification` describes which checks actually ran and what they returned.
+- `outcome` describes the practical result of the run.
 
 ---
 
 ## package_vulnerability
 
-### Erlaubte Statuswerte
+### Allowed statuses
 
 - `resolved`
 - `partially-resolved`
 - `blocked`
 
-### Pflichtfelder
+### Required fields
 
 ```json
 {
@@ -68,51 +68,51 @@ Dieses Dokument ist die **Single Source of Truth** für das Handback-Protokoll.
 }
 ```
 
-### Zusatzfelder in `implementation`
+### Optional `implementation` fields
 
-Optional, aber wenn vorhanden exakt so benennen:
+If present, use exactly these names:
 
 - `dependencyUpdates`
 - `parentUpdates`
 - `overridesApplied`
 
-### Feldsemantik
+### Field semantics
 
-- `vulnerablePackage` = kanonischer Name des tatsächlich betroffenen Pakets
-- `vulnerableVersions` = konkret beobachtete problematische Versionen
-- `targetVersion` = Zielversion oder Zielauflösung, auf die die Remediation hinarbeitet
+- `vulnerablePackage` = canonical name of the affected package
+- `vulnerableVersions` = concrete problematic versions actually observed
+- `targetVersion` = target version or target resolution for the remediation
 - `strategy`
-  - `update-direct` = direkte Abhängigkeit selbst anheben
-  - `update-parent` = kontrollierbare Parent-Abhängigkeit anheben
-  - `consolidated-shared-upgrade` = ein gemeinsamer Hebel behebt mehrere betroffene Pfade derselben Arbeitseinheit
-  - `temp-override` = temporäre manager-spezifische Override-/Resolution-Materialisierung als Übergangslösung
+  - `update-direct` = upgrade the direct dependency
+  - `update-parent` = upgrade a controllable parent dependency
+  - `consolidated-shared-upgrade` = one shared lever fixes multiple affected paths in the same work unit
+  - `temp-override` = temporary manager-specific override or resolution materialization
 - `riskLevel`
-  - `low` = geringe Änderungswahrscheinlichkeit oder klar lokalisierter Effekt
-  - `medium` = überschaubares, aber spürbares Änderungsrisiko
-  - `high` = erhöhte Wahrscheinlichkeit von Nebenwirkungen oder manueller Nacharbeit
+  - `low` = low change risk or tightly localized effect
+  - `medium` = bounded but noticeable change risk
+  - `high` = elevated risk of side effects or manual follow-up
 - `complexity`
-  - `contained` = die Remediation bleibt innerhalb der erlaubten Ausführungsgrenze
-  - `architectural` = die Remediation überschreitet diese Grenze oder braucht nicht-lokale Entscheidungen
+  - `contained` = remediation stays within the allowed execution boundary
+  - `architectural` = remediation exceeds that boundary or requires non-local decisions
 
-### Zusatzregeln
+### Additional rules
 
-- Bei `status = resolved` muss `verification.dependencyCheck = pass` sein.
-- Bei `status = blocked` oder `status = partially-resolved` müssen in `outcome` zusätzlich vorhanden sein:
+- If `status = resolved`, `verification.dependencyCheck` must be `pass`.
+- If `status = blocked` or `status = partially-resolved`, `outcome` must also contain:
   - `blockers`
   - `remediationProposal`
   - `rationale`
-- Wenn `strategy = temp-override`, dann sollte `implementation.overridesApplied` nicht leer sein.
+- If `strategy = temp-override`, `implementation.overridesApplied` should not be empty.
 
 ---
 
 ## code
 
-### Erlaubte Statuswerte
+### Allowed statuses
 
 - `resolved`
 - `blocked`
 
-### Resolved-Format
+### Resolved format
 
 ```json
 {
@@ -137,7 +137,7 @@ Optional, aber wenn vorhanden exakt so benennen:
 }
 ```
 
-### Blocked-Format
+### Blocked format
 
 ```json
 {
@@ -157,32 +157,32 @@ Optional, aber wenn vorhanden exakt so benennen:
 }
 ```
 
-### Optionale Zusatzfelder in `implementation`
+### Optional `implementation` fields
 
-Keine.
+None.
 
-### Feldsemantik
+### Field semantics
 
-- `filePath` = kanonischer repo-relativer Pfad zur primär betroffenen Datei
-- `lineRange` = menschenlesbarer Bereich der betroffenen oder geänderten Zeilen, z. B. `42-42` oder `42-57`
-- `cweId` = relevante CWE-nahe Klassifikation, sofern aus dem Finding ableitbar
-- `severity` = priorisierende Severity des Findings im Resolver-Kontext
+- `filePath` = canonical repo-relative path to the primary affected file
+- `lineRange` = human-readable range of affected or changed lines, for example `42-42` or `42-57`
+- `cweId` = relevant CWE-like classification when it can be derived from the finding
+- `severity` = severity used for resolver prioritization
 - `complexity`
-  - `trivial` = sehr lokaler, offensichtlicher Fix mit minimalem Blast Radius
-  - `contained` = kleiner, aber leicht kontextabhängiger Fix innerhalb des erlaubten Scopes
-  - `false-positive` = Finding erfordert nach Kontextprüfung keine Codeänderung
-  - `architectural` = notwendige Änderung wäre nicht mehr lokal und klar begrenzbar
+  - `trivial` = very local, obvious fix with minimal blast radius
+  - `contained` = small but slightly context-sensitive fix within scope
+  - `false-positive` = no code change is required after context inspection
+  - `architectural` = the necessary change is no longer local and clearly bounded
 
 ---
 
-## Validation Notes for the Orchestrator
+## Validation notes for the orchestrator
 
-Der Orchestrator muss mindestens prüfen:
+The orchestrator must at least verify:
 
-1. JSON parsebar?
-2. `issueType` korrekt?
-3. `status` für den Resolver erlaubt?
-4. Pflichtfelder vollständig?
-5. `blocked` / `partially-resolved` vollständig begründet?
-6. Dep `resolved` nur mit `dependencyCheck = pass`?
-7. Keine `null`-Werte?
+1. Is the payload valid JSON?
+2. Is `issueType` correct?
+3. Is `status` allowed for this resolver?
+4. Are all required fields present?
+5. Are `blocked` or `partially-resolved` responses fully justified?
+6. Is dep `resolved` claimed only when `dependencyCheck = pass`?
+7. Are there no `null` values?

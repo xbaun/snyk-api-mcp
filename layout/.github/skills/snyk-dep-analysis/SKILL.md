@@ -6,57 +6,59 @@ user-invocable: false
 
 # snyk-dep-analysis
 
-## Zweck
+## Purpose
 
-Liefert den **deterministischen Lesepfad** für Dependency-Fakten, damit Resolver keine großen Lockfiles oder Graph-Artefakte manuell lesen müssen.
+Provide the deterministic read path for dependency facts so resolvers do not have to parse large lockfiles or graph artifacts manually.
 
-## Verantwortung
+## This skill owns
 
-- Paketmanager über einen kleinen Adapter-Registry-Mechanismus auswählen
-- unterstützte Manager deterministisch erkennen
-- kompakte JSON-Faktensätze für Dependency-Resolver liefern
-- direkte Deklarationen, transitive Pfade und Verifikationsfakten vereinheitlichen
-- manuelle Lockfile-Leserei durch normierte Analysekommandos ersetzen
+- manager selection through a small adapter registry
+- deterministic detection of supported managers
+- compact JSON fact sets for dependency resolvers
+- normalized direct declarations, transitive paths, and verification facts
+- replacing raw lockfile reading with stable analysis commands
 
-## Unterstützte Manager
+## Supported managers
 
-- `pnpm` — aktuell vollständig unterstützt
-- `npm` — unterstützt über deterministische `package-lock.json`-Analyse
-- `yarn` — unterstützt für Yarn Classic `yarn.lock` v1
+- `pnpm` — fully supported
+- `npm` — supported through deterministic `package-lock.json` analysis
+- `yarn` — supported for Yarn Classic `yarn.lock` v1
 
-## Struktur
+## Canonical files
 
-- `references/harness.md` — Feldsemantik, Auto-Selection-Regeln und Kommandoeinsatz
+- `references/harness.md` — output semantics, auto-selection rules, and command intent
+- `references/cli-usage.md` — canonical query sequences and argument patterns
 - `scripts/dep.py` — `inspect`, `trace`, `verify`
 
-## Tools
+## Script-first rules
 
-- Operative Nutzung erfolgt ausschließlich über `python3 .github/skills/snyk-dep-analysis/scripts/dep.py <subcommand>`.
-- Vor jeder Verwendung zuerst Hilfe lesen:
-  - `python3 .github/skills/snyk-dep-analysis/scripts/dep.py --help`
-  - `python3 .github/skills/snyk-dep-analysis/scripts/dep.py <subcommand> --help`
-- Für Agent-Läufe bleiben Shell-Kommandos weiterhin mit `rtk` prefixed.
+- Use only `python3 .github/skills/snyk-dep-analysis/scripts/dep.py <subcommand>`.
+- Read `dep.py --help` before first use.
+- Read `dep.py <subcommand> --help` before using a new subcommand.
+- For the full `inspect` / `trace` / `verify` sequence, fallback rules, and interpretation rules, read `references/cli-usage.md`.
 
-## Kanonische Kommandos
+## Canonical commands
 
-- Fact Set aufbauen:
+- Fact set:
   - `python3 .github/skills/snyk-dep-analysis/scripts/dep.py inspect --repo-root . --package-name <name> --workspace-package <workspace | unknown>`
-- Dependency-Trace erzeugen:
+- Dependency trace:
   - `python3 .github/skills/snyk-dep-analysis/scripts/dep.py trace --repo-root . --package-name <name> --workspace-package <workspace | unknown>`
-- Remediation verifizieren:
+- Verification:
   - `python3 .github/skills/snyk-dep-analysis/scripts/dep.py verify --repo-root . --package-name <name> --workspace-package <workspace | unknown> --vulnerable-version <version>`
 
-## Regeln
+`references/cli-usage.md` is the canonical place for the full query flow, including `purl` fallback and repeated `--vulnerable-version` usage.
 
-- Resolver sollen `dep.py` bevorzugen, sobald ein benötigter Fakt durch `inspect`, `trace` oder `verify` abgedeckt wird.
-- Große Lockfiles oder rohe Dependency-Graphen werden **nicht manuell** gelesen, wenn `dep.py` den Faktensatz liefern kann.
-- Das Script darf intern manager-spezifische Dateien oder CLI-Ausgaben auswerten; diese Komplexität gehört in den Adapter, nicht in den Prompt-Kontext.
-- Die JSON-Ausgabe bleibt klein, stabil und auf Resolver-Entscheidungen ausgerichtet.
-- Manager-Unterstützung wird **über neue Adapter** erweitert, nicht durch freie `if/else`-Explosion im Resolver.
+## Rules
 
-## Nicht-Ziele
+- Prefer `dep.py` whenever `inspect`, `trace`, or `verify` covers the needed fact.
+- Do not read large lockfiles manually when `dep.py` can provide the same fact set.
+- Keep manager-specific complexity inside adapters, not in prompt logic.
+- Keep JSON output small, stable, and resolver-oriented.
+- Extend support through new adapters, not resolver-side branching.
 
-- keine Override-Materialisierung
-- keine Ledger-Updates
-- keine automatische Remediation-Strategieentscheidung
-- keine spekulative Vollunterstützung weiterer Package-Manager ohne echten Bedarf
+## Does not own
+
+- override materialization
+- ledger updates
+- remediation strategy choice
+- speculative support for package managers without a real need

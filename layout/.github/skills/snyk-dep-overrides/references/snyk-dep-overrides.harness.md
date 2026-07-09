@@ -1,15 +1,15 @@
 # snyk-dep-overrides harness
 
-## Ziel
+## Purpose
 
-Dieses Harness beschreibt, wann und wie eine manager-spezifische Override-Materialisierung gepflegt werden darf.
+This harness defines when and how a manager-specific override materialization may be maintained.
 
-Im Gesamtfluss beschreibt dieses Harness nur die Override-Entscheidung und -Materialisierung. Das finale Resolver-Handback bleibt ein separates JSON-Objekt, das `snyk-orchestration` primär direkt per stdin an `ledger.py update --from-handback -` weiterreicht; dieses Harness setzt dafür kein temp Handback-File voraus.
+It covers override decision support and materialization only. The final resolver handback remains a separate JSON object passed to `ledger.py update --from-handback -` by `snyk-orchestration`.
 
-## Entscheidungsregeln
+## Decision rules
 
-1. Ein Override ist nur zulässig, wenn eine reguläre Dependency-Änderung den Befund nicht innerhalb der YAGNI+KISS-Grenze behebt.
-2. Jeder Override-Case braucht nachvollziehbare Traceability:
+1. An override is allowed only when a regular dependency change cannot fix the finding within the YAGNI+KISS boundary.
+2. Every override case needs traceable evidence:
    - `selector`
    - `target`
    - `package`
@@ -17,185 +17,181 @@ Im Gesamtfluss beschreibt dieses Harness nur die Override-Entscheidung und -Mate
    - `evidenceTree[]`
    - `watch[]`
    - `obsoleteWhen[]`
-3. `status=active` bedeutet: aktuell wirksam und beabsichtigt.
-4. `status=obsolete` bedeutet: historisch dokumentiert, aber nicht mehr nötig.
-5. Entfernen ist nur zulässig, wenn die `obsoleteWhen[]`-Kriterien erfüllt sind.
+3. `status=active` means the override is currently intended and effective.
+4. `status=obsolete` means the case is historical and no longer needed.
+5. Removal is allowed only when the `obsoleteWhen[]` conditions are satisfied.
 
-## Feldsemantik
+## Field semantics
 
-Diese Begriffe sind normativ. Ein Agent darf sie nicht frei uminterpretieren.
+These terms are normative.
 
 ### `selector`
 
-- Beschreibt **welches Auflösungs-Match überschrieben wird**.
-- Das ist der manager-spezifische Ausdruck für die problematische oder unerwünschte Paketauflösung.
-- Beispiel bei pnpm: `esbuild@<0.28.0`
-- `selector` beschreibt das Match des Problems, **nicht** die gewünschte Zielversion.
+- Which resolution match is being overridden.
+- This is the manager-specific expression for the problematic or unwanted resolution.
+- Example for pnpm: `esbuild@<0.28.0`
+- `selector` describes the problem match, not the target version.
 
 ### `target`
 
-- Beschreibt **worauf der Selector umgebogen wird**.
-- Das ist die gewünschte nicht-vulnerable Zielauflösung oder Ziel-Range.
-- Beispiel: `^0.28.1`
+- What the selector is redirected to.
+- This is the desired non-vulnerable target resolution or range.
+- Example: `^0.28.1`
 
 ### `package`
 
-- Der kanonische Name des fachlich betroffenen Pakets.
-- Dient der Lesbarkeit, Snyk-Traceability und späteren Wiedererkennung.
-- Beispiel: `esbuild`
+- Canonical name of the affected package.
+- Used for readability, Snyk traceability, and later recognition.
 
 ### `snykIds[]`
 
-- Liste der konkreten Snyk-Referenzen, die diesen Override motivieren.
-- Inhalt: echte Snyk IDs wie `SNYK-JS-ESBUILD-17750822`.
-- Zweck: nachvollziehbar machen, **welche Findings/Advisories** dieser Case adressiert.
+- Concrete Snyk references that justify the override.
+- Use real Snyk IDs such as `SNYK-JS-ESBUILD-17750822`.
 
 ### `evidenceTree[]`
 
-- Belegt, **warum** der Override nötig wurde und **über welchen Dependency-Pfad** das Paket ins Projekt gelangt.
-- Jeder Eintrag steht für eine konkrete beobachtete Einführungskette.
+- Why the override is needed and through which dependency path the package enters the repo.
+- Each entry represents one observed introduction chain.
 
 #### `evidenceTree[].importer`
 
-- Die Stelle, von der aus die Kette betrachtet wird.
-- Typischerweise Workspace-Root, Catalog oder ein konkretes Package.
+- Where the chain is viewed from.
+- Typically workspace root, catalog, or a concrete package.
 
 #### `evidenceTree[].directDependency`
 
-- Der erste kontrollierbare Hebel in der Kette.
-- Also die direkt deklarierte Abhängigkeit, über die das problematische Paket hereinkommt.
+- The first controllable lever in the chain.
+- Usually the direct dependency that introduces the affected package.
 
 #### `evidenceTree[].chain[]`
 
-- Vollständige beobachtete Kette vom kontrollierbaren Hebel bis zum betroffenen Paket.
-- Reihenfolge ist upstream → downstream.
-- Beispiel: `["vite@7.3.1", "esbuild@0.27.3"]`
+- Full observed chain from the controllable lever to the affected package.
+- Order is upstream → downstream.
 
 ### `watch[]`
 
-- Liste von Upstream-Hebeln, die künftig beobachtet werden müssen, damit der Override später entfernt oder angepasst werden kann.
-- `watch[]` beantwortet die Frage: **Welche Deklarationen müssen sich ändern, damit der Override obsolet werden könnte?**
+- Upstream levers that should be monitored so the override can later be removed or adjusted.
+- `watch[]` answers: which declarations must change before this override can become obsolete?
 
 #### `watch[].package`
 
-- Das zu beobachtende Paket.
+- Package to monitor.
 
 #### `watch[].declaredIn`
 
-- Wo dieses Paket deklariert ist.
-- Beispiele: `catalog`, `apps/web/package.json`
+- Where that package is declared.
 
 #### `watch[].declaredVersion`
 
-- Die zum Zeitpunkt der Case-Erstellung beobachtete deklarierte Version oder Range.
+- Declared version or range observed when the case was created.
 
 #### `watch[].relevance`
 
-- Kurze Begründung, warum genau dieses Paket überwacht werden soll.
+- Why this upstream package matters.
 
 ### `obsoleteWhen[]`
 
-- Explizite, überprüfbare Bedingungen, unter denen der Override-Case nicht mehr nötig sein soll.
-- Jede Bedingung muss als konkrete Prüfregel formuliert sein, nicht als vage Absicht.
-- Gute Beispiele:
-   - `All watched packages resolve esbuild >=0.28.1 natively`
-   - `Removing selector does not reintroduce the vulnerable package version`
+- Explicit, testable conditions under which the override should no longer be needed.
+- Each condition must be written as a concrete verification rule, not as vague intent.
+
+Good examples:
+
+- `All watched packages resolve esbuild >=0.28.1 natively`
+- `Removing selector does not reintroduce the vulnerable package version`
 
 ### `status`
 
-- `active` = Override ist aktuell wirksam und beabsichtigt
-- `draft` = Case ist vorbereitet, aber noch nicht als aktive Materialisierung zu behandeln
-- `obsolete` = historisch dokumentiert, aber nicht mehr nötig
-- `removed` = Case ist nicht mehr operative Quelle
+- `active` = currently intended and effective
+- `draft` = prepared, but not yet an active materialization
+- `obsolete` = historical, no longer needed
+- `removed` = no longer an operational source
 
 ### `reason`
 
-- `security` = primär Sicherheitsremediation
-- `compatibility` = primär Kompatibilitätsgrund
-- `performance` = primär Performance-Grund
-- `other` = legitimer Sonderfall außerhalb der anderen Klassen
+- `security` = security remediation
+- `compatibility` = compatibility reason
+- `performance` = performance reason
+- `other` = legitimate exception outside the other classes
 
 ### `introducedBy`
 
-- Kennzeichnet, welcher Lauf / welche Session / welche Remediation den Case eingeführt hat.
-- Soll stabil genug sein, um zur verursachenden Änderung zurückverfolgt zu werden.
+- Identifies the run, session, or remediation that introduced the case.
+- It should stay stable enough to trace the origin.
 
 ### `scope`
 
-- Optionale menschliche Einordnung, in welchem Bereich der Override gilt.
-- Beispiele: `workspace-root`, `dev-tooling`, `apps/web`
-- Dient der Lesbarkeit, nicht dem Matching.
+- Optional human-readable scope such as `workspace-root`, `dev-tooling`, or `apps/web`.
+- For readability only, not matching.
 
 ### `contextSummary`
 
-- Kurze menschenlesbare Erklärung, warum der Override-Case existiert.
-- Soll beantworten: **Warum braucht dieses Repo diesen Override aktuell?**
+- Short human-readable explanation of why this repo currently needs the override.
 
-## Inhaltliche Qualitätsregeln
+## Quality rules
 
-- `selector` und `target` müssen zusammen ein klares Problem→Lösungs-Paar bilden.
-- `evidenceTree[]` darf nicht geraten sein; jeder Eintrag braucht beobachtete oder reproduzierbare Evidence.
-- `watch[]` soll echte spätere Entfernungshebel benennen, nicht nur das bereits vulnerable Paket wiederholen.
-- `obsoleteWhen[]` muss prüfbar sein.
-- `snykIds[]` soll echte Snyk-Referenzen enthalten, nicht freie Labels.
-- Wenn ein Agent die Bedeutung eines Feldes nicht sicher belegen kann, darf er den Case nicht schreiben.
+- `selector` and `target` must form a clear problem → solution pair.
+- `evidenceTree[]` must be observed or reproducible, never guessed.
+- `watch[]` should name real future removal levers, not just restate the vulnerable package.
+- `obsoleteWhen[]` must be testable.
+- `snykIds[]` should contain real Snyk references, not free labels.
+- If the meaning of a field cannot be justified, do not write the case.
 
-## Beispielhafte Lesart eines vollständigen Cases
+## Case reading shorthand
 
 ```text
-selector      = welches Match wird überschrieben?
-target        = worauf wird dieses Match umgebogen?
-package       = welches Paket ist fachlich betroffen?
-snykIds       = welche Snyk-Findings motivieren den Case?
-evidenceTree  = wie kommt das Paket hinein?
-watch         = welche Upstream-Hebel müssen später beobachtet werden?
-obsoleteWhen  = wann darf der Override wieder weg?
+selector      = what match is being overridden?
+target        = what does that match resolve to instead?
+package       = what package is affected?
+snykIds       = which Snyk findings justify the case?
+evidenceTree  = how does the package enter the repo?
+watch         = which upstream levers should be monitored later?
+obsoleteWhen  = when may the override be removed?
 ```
 
-## Pflege
+## Maintenance rules
 
-- Verwende `scripts/overrides.py analyze`, um vor einer Strategieentscheidung existierende Overrides zu prüfen.
-- Verwende `scripts/overrides.py read`, wenn ein konkreter `key` bereits deterministisch bekannt ist.
-- Verwende `scripts/overrides.py list`, wenn ein operativer Überblick nach `status` benötigt wird.
-- Verwende `scripts/overrides.py upsert`, um neue oder geänderte Cases zu schreiben.
-- Verwende `scripts/overrides.py materialize`, um aktive pnpm-Cases nach `pnpm-workspace.yaml` zu synchronisieren.
-- Verwende `scripts/overrides.py validate`, um JSON-Materialisierung und echte pnpm-Konfiguration gegeneinander zu prüfen.
-- Verwende `scripts/overrides.py remove` nur dann, wenn die `obsoleteWhen[]`-Bedingungen nachvollziehbar erfüllt sind.
-- Für nicht kanonisch benannte Materialisierungen oder Example-Dateien gib bei `analyze`, `read`, `list` und `remove` explizit `--manager <manager>` an.
-- Lies Cases mit `read` oder `list`, statt das JSON manuell zu interpretieren.
-- Persistiere nur valide Materialisierungen.
+- Use `scripts/overrides.py analyze` before strategy selection.
+- Use `scripts/overrides.py read` when a concrete `key` is already known.
+- Use `scripts/overrides.py list` for operational status overviews.
+- Use `scripts/overrides.py upsert` to write new or changed cases.
+- Use `scripts/overrides.py materialize` to sync active pnpm cases into `pnpm-workspace.yaml`.
+- Use `scripts/overrides.py validate` to compare JSON materialization with the live pnpm configuration.
+- Use `scripts/overrides.py remove` only when `obsoleteWhen[]` conditions are demonstrably satisfied.
+- For non-canonical materialization names or example files, pass `--manager <manager>` explicitly to `analyze`, `read`, `list`, and `remove`.
+- Read cases via `read` or `list`, not by manually interpreting raw JSON.
+- Persist only valid materializations.
 
-### `analyze` Output-Semantik
+### `analyze` output semantics
 
-Der `analyze`-Subcommand liefert eine deterministische Query-Antwort:
+`analyze` returns a deterministic query result:
 
-- `query` — die exakten angewandten Filter (`manager`, `package`, `snykId`, `status`, `checkSelector`)
-- `matches[]` — vollständige Case-Objekte, die alle gesetzten Filter erfüllen
-- `summary.totalMatches` — Anzahl der Treffer
-- `summary.statusCounts` — Verteilung der Treffer nach Status (`active`, `draft`, `obsolete`, `removed`)
-- `summary.totalCases` — Gesamtzahl aller Cases in der Materialisierung (zum Vergleich)
-- `summary.conflictingSelectors[]` — aktive oder draft Cases, die zum geprüften Selector passen; jeder Eintrag trägt `conflictType`:
-   - `exact-selector` = derselbe Selector existiert bereits
-   - `same-package` = derselbe Paketname hat bereits einen anderen Selector-Case
+- `query` — exact applied filters (`manager`, `package`, `snykId`, `status`, `checkSelector`)
+- `matches[]` — full case objects satisfying all filters
+- `summary.totalMatches` — number of matches
+- `summary.statusCounts` — status distribution for the matches (`active`, `draft`, `obsolete`, `removed`)
+- `summary.totalCases` — total number of cases in the materialization
+- `summary.conflictingSelectors[]` — active or draft cases relevant to the checked selector; each entry has `conflictType`:
+  - `exact-selector` = the same selector already exists
+  - `same-package` = the same package already has a different selector case
 
-**Regeln für Resolver:**
+Resolver rules:
 
-- Vor jeder Strategieentscheidung MUSS der Resolver `analyze --package <name>` aufrufen.
-- Wenn ein Case mit `status=active` für dasselbe Paket existiert, MUSS der Resolver prüfen, ob das Advisory bereits abgedeckt ist (`--snyk-id`).
-- Vor einem neuen `upsert` MUSS der Resolver `--check-selector` verwenden, um Konflikte zu erkennen.
-- `exact-selector` bedeutet: derselbe Selector ist bereits im Bestand und muss vor einem neuen `upsert` begründet wiederverwendet oder aktualisiert werden.
-- `same-package` bedeutet: für dasselbe Paket existiert bereits ein anderer Selector-Case; das ist ein Review-Signal und darf nicht blind als eindeutige semver-Kollision interpretiert werden.
+- Before strategy selection, call `analyze --package <name>`.
+- If an `active` case already exists for the same package, check whether the advisory is already covered with `--snyk-id`.
+- Before a new `upsert`, use `--check-selector` to detect conflicts.
+- `exact-selector` means the same selector already exists and should normally be reused or updated, not duplicated.
+- `same-package` is a review signal, not automatic proof of a semver conflict.
 
-## Deterministische Anlage und Pflege
+## Deterministic creation and maintenance
 
-- Ein Agent darf die Materialisierungsdatei nicht frei benennen.
-- Ein Agent darf die Materialisierungsdatei nicht per Hand anlegen.
-- Der operative Dateipfad kommt aus dem Repo-Kontext; in diesem Repo ist das `snyk-dep-overrides.pnpm.json` im Repo-Root.
-- Falls die Datei fehlt, wird sie durch `scripts/overrides.py upsert` erzeugt.
-- Für pnpm ist `pnpm-workspace.yaml` die echte Zielkonfiguration; sie wird nicht manuell gepflegt, sondern über `scripts/overrides.py materialize` synchronisiert.
-- Der Agent muss also nur den fachlichen Case korrekt bestimmen; die JSON-Anlage, pnpm-Materialisierung und Validierung übernimmt das Script deterministisch.
-- Das Example unter `examples/` dient nur zum Verständnis eines vollständigen Cases, nicht als operative Schreibvorlage.
+- Do not invent materialization filenames.
+- Do not create materialization files by hand.
+- In this repo the operational file is `snyk-dep-overrides.pnpm.json` in the repo root.
+- If it is missing, let `scripts/overrides.py upsert` create it.
+- For pnpm, `pnpm-workspace.yaml` is the live target and must be kept in sync through `scripts/overrides.py materialize`, not manual editing.
+- The agent should determine the case correctly; the script owns JSON creation, pnpm sync, and validation.
+- The example under `examples/` is for understanding only, not as a write template.
 
-## Erwartete Ausgabe
+## Expected output
 
-Eine manager-spezifische Datei wie `snyk-dep-overrides.pnpm.json`, die den Schema-Contract erfüllt und für Agenten lesbar bleibt.
+A manager-specific file such as `snyk-dep-overrides.pnpm.json` that satisfies the schema contract and remains readable for agents.

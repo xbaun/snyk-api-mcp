@@ -72,7 +72,7 @@ The server reads these environment variables at runtime:
 
 ### Quick client setup
 
-Works with any stdio-based MCP client. A minimal VS Code / GitHub Copilot setup looks like this:
+Works with any stdio-based MCP client. A minimal VS Code / GitHub Copilot setup using `npx` looks like this:
 
 ```jsonc
 {
@@ -86,8 +86,8 @@ Works with any stdio-based MCP client. A minimal VS Code / GitHub Copilot setup 
   ],
   "servers": {
     "snyk-api": {
-      "command": "node",
-      "args": ["/absolute/path/to/snyk-api-mcp/build/index.js"],
+      "command": "npx",
+      "args": ["-y", "--package", "@xbaun/snyk-api-mcp", "snyk-api-mcp"],
       "env": {
         "SNYK_TOKEN": "${input:snyk_token}",
         "SNYK_API_BASE": "https://api.eu.snyk.io",

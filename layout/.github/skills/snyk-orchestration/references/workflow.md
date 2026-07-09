@@ -1,91 +1,91 @@
 # snyk-orchestration workflow
 
-## Ziel
+## Purpose
 
-Dieser Workflow ist normativ. `snyk-orchestration` soll nicht "frei improvisieren", sondern exakt diese Abfolge deterministisch ausführen.
+This workflow is normative. `snyk-orchestration` must follow it exactly.
 
-## Normativer Ablauf
+## Normative sequence
 
 1. **Gate [O1] — Selection**
-   - `ledger.py select --ledger ... --repo-root . --format json` ausführen
-   - Resume-Fall oder Dirty-Stop aus dessen Ergebnis ableiten
-   - sonst nächstes `not-started` Advisory deterministisch aus dessen Ergebnis übernehmen
-   - optional für Operator-Überblick: `ledger.py analyze --ledger ... --format json`
-   - `ledger.py set-status --ledger ... --key <advisoryKey> --status in-progress`
+   - Run `ledger.py select --ledger ... --repo-root . --format json`.
+   - Derive `resume`, `dirty-stop`, `start`, or `done` only from that result.
+   - Optional operator view: `ledger.py analyze --ledger ... --format json`.
+   - If starting new work, persist `in-progress` with `ledger.py set-status --key <advisoryKey> --status in-progress`.
 
 2. **Gate [O2] — Dispatch**
-   - Resolver ausschließlich aus `issueType` ableiten
+   - Select the resolver from `issueType` only.
 
 3. **Gate [O3] — Handoff Build**
-   - Handoff strikt nach `handoff-format.md` erzeugen
-   - Seed-Issues nach `advisoryKey` filtern
+   - Build the handoff exactly as defined in `handoff-format.md`.
+   - Filter seed issues by `advisoryKey`.
 
-4. **Resolver-Run**
-   - `snyk-resolve-dep` oder `snyk-resolve-code` genau einmal starten
+4. **Resolver Run**
+   - Run `snyk-resolve-dep` or `snyk-resolve-code` exactly once.
 
 5. **Gate [O4] — Handback Validation**
-   - Handback streng gegen `handback-format.md` prüfen
-   - bei Parse-/Format-Fehler `ledger.py record-failure` nutzen und den Fehler präzise persistieren
+   - Validate the handback exactly against `handback-format.md`.
+   - On parse or format failure, persist the error with `ledger.py record-failure`.
 
 6. **Gate [O5] — Override Validation**
-   - nur falls Overrides gemeldet wurden
+   - Run only if overrides were reported.
 
 7. **Gate [O6] — Code Health Validation**
-   - Mindestkonsistenz der behaupteten Verifikationen prüfen
+   - Check minimum consistency of claimed verification results.
 
 8. **Gate [O7] — Ledger Update**
-   - `ledger.py update` mit stdin-first Handback-Übergabe (`--from-handback -`)
-   - JSON-Integrität prüfen
+   - Persist the validated handback with `ledger.py update --from-handback -`.
+   - Confirm JSON integrity afterward.
 
 9. **Gate [O8] — Cascade Check**
-   - nur für `package_vulnerability` + `resolved`
+   - Run only for `package_vulnerability` with `status=resolved`.
 
 10. **Gate [O9] — GOTCHAS Curation**
-   - Session-GOTCHAS prüfen
-   - dauerhafte Learnings ggf. nach `.snyk/GOTCHAS.md` promoten
+   - Review session GOTCHAS.
+   - Promote durable rules to `.snyk/GOTCHAS.md` when justified.
 
 11. **Loop**
-   - zurück zu Gate [O1], bis keine `not-started` Advisories mehr vorhanden sind
+   - Return to Gate `[O1]` until selection returns `done`.
 
-## Harte Invarianten
+## Hard invariants
 
-- Nie direkt `issues-ledger.json` per LLM editieren
-- Nie Gate-[O1]-Control-Flow durch manuelles Ledger-Scannen rekonstruieren; dafür ist `ledger.py select` zuständig
-- Nie Dispatch anhand anderer Felder als `issueType`
-- Nie ohne persistierten `in-progress` Status einen Resolver starten
-- Nie Handback-Inhalte erraten oder still reparieren
-- Nie Cascade-Apply ohne echte Lockfile-/Dependency-Evidenz
-- Nie Resolver direkt in `.snyk/GOTCHAS.md` schreiben lassen
+- Never edit `issues-ledger.json` directly.
+- Never reconstruct Gate `[O1]` by scanning raw ledger JSON.
+- Never dispatch from anything other than `issueType`.
+- Never start a resolver without persisted `in-progress`.
+- Never guess or silently repair handback content.
+- Never apply a cascade close without real lockfile or dependency evidence.
+- Never let resolvers write directly to `.snyk/GOTCHAS.md`.
 
-## Minimaler Entscheidungsbaum
+## Minimal decision tree
 
 ```text
-ledger lesen
-└─ in-progress vorhanden?
-   ├─ ja → dirty?
-   │  ├─ ja → stoppe und hole explizite User-Entscheidung
-   │  └─ nein → resume dieses Advisory
-   └─ nein → erstes not-started per Sortierung wählen
-      ├─ keines vorhanden → Ende
+run ledger.py select
+└─ in-progress exists?
+   ├─ yes → dirty?
+   │  ├─ yes → stop and require explicit user decision
+   │  └─ no → resume that advisory
+   └─ no → choose first not-started advisory by deterministic sort
+      ├─ none → done
       └─ set-status(in-progress)
          └─ issueType?
             ├─ package_vulnerability → dep resolver
             └─ code → code resolver
 ```
 
-## Ergebnis pro Advisory
+## Advisory end states
 
-Jeder Advisory-Durchlauf endet genau in einem dieser Zustände:
+Each advisory run ends in exactly one of these states:
 
 - `resolved`
 - `blocked`
 - `partially-resolved`
 
-Es gibt keinen vierten semantischen Endzustand.
+There is no fourth semantic end state.
 
-## GOTCHAS Ownership im Workflow
+## GOTCHAS ownership in the loop
 
-- `snyk-session-init` erzeugt die Dateien.
-- Resolver schreiben advisory-spezifische Learnings nur nach `.synk/{sessionId}/GOTCHAS.md`.
-- `snyk-orchestration` schreibt Orchestrator-Notizen ebenfalls in die Session-Datei und ist allein für Promotionen nach `.snyk/GOTCHAS.md` verantwortlich.
-- Resume-/Failure-relevante Fehlerzustände werden zusätzlich im Ledger persistiert.
+- `snyk-session-init` creates the files.
+- Resolvers append advisory-specific learnings only to `.synk/{sessionId}/GOTCHAS.md`.
+- `snyk-orchestration` may also append orchestration notes there.
+- Only `snyk-orchestration` promotes durable rules to `.snyk/GOTCHAS.md`.
+- Resume and failure state must also be persisted in the ledger.

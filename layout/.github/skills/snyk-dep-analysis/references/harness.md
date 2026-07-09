@@ -1,85 +1,85 @@
 # snyk-dep-analysis harness
 
-## Ziel
+## Purpose
 
-Dieses Harness definiert die **einzige zulässige Leseschnittstelle** für kompakte Dependency-Fakten im Resolver-Kontext.
+This harness defines the only allowed read interface for compact dependency facts in resolver workflows.
 
-Im Gesamtfluss liefert dieses Harness nur Faktensammlung und Verifikation. Das finale Resolver-Handback bleibt ein separates JSON-Objekt, das `snyk-orchestration` primär direkt per stdin an `ledger.py update --from-handback -` weiterreicht; dieses Harness setzt dafür kein temp Handback-File voraus.
+It covers fact gathering and verification only. The final resolver handback remains a separate JSON object sent to `ledger.py update --from-handback -` by `snyk-orchestration`.
 
-## Adapter-Modell
+## Adapter model
 
-- `dep.py` besitzt eine kleine Registry aus Manager-Adaptern.
-- Jeder Adapter kapselt:
-  - Erkennung (`detect_score`)
-  - Faktensammlung (`inspect`)
-  - Pfad-/Hebelanalyse (`trace`)
-  - Verifikation (`verify`)
-- Der Resolver spricht **nur** mit `dep.py`, nicht direkt mit manager-spezifischen Rohartefakten.
+- `dep.py` has a small registry of manager adapters.
+- Each adapter owns:
+  - detection (`detect_score`)
+  - fact gathering (`inspect`)
+  - path and lever analysis (`trace`)
+  - verification (`verify`)
+- Resolvers talk to `dep.py`, not to manager-specific raw artifacts.
 
-## Auto-Selection
+## Auto-selection
 
-1. Wenn `--manager` angegeben ist, wird genau dieser Adapter verwendet.
-2. Wenn kein `--manager` angegeben ist, wählt `dep.py` den Adapter mit dem höchsten `detect_score`.
-3. Die Erkennung bleibt absichtlich simpel und dateibasiert.
-4. Für dieses Repo gewinnt `pnpm` typischerweise über `pnpm-workspace.yaml` oder `pnpm-lock.yaml`.
-5. Erkannte, aber noch nicht implementierte Manager müssen **klar fehlschlagen**, statt implizit auf andere Manager zu fallen.
+1. If `--manager` is provided, use that adapter only.
+2. Otherwise, `dep.py` picks the adapter with the highest `detect_score`.
+3. Detection stays intentionally simple and file-based.
+4. In this repo, `pnpm` usually wins via `pnpm-workspace.yaml` or `pnpm-lock.yaml`.
+5. Recognized but unsupported managers must fail clearly, not fall through silently.
 
 ## Subcommands
 
 ### `inspect`
 
-Liefert den kompakten Faktensatz für Gate `[R2]`.
+Provides the compact fact set for Gate `[R2]`.
 
-Pflichtsemantik:
+Required semantics:
 
-- `manager` — der ausgewählte Adapter
-- `packageName` — kanonischer Paketname aus `--package-name` oder `--purl`
-- `workspacePackage` — der verwendete Workspace-Hint oder `unknown`
-- `manifestPaths[]` — relevante `package.json`-Dateien im Analysekorridor
-- `directDeclarations[]` — direkte Deklarationen des Pakets in relevanten Manifesten
-- `observedVersions[]` — konkret beobachtete aktive Paketversionen
-- `reachableImporters[]` — beobachtete Importer / Workspace-Einstiegspunkte
-- `packagePresent` — ob das Paket in der aktiven Auflösung überhaupt vorkommt
+- `manager` — selected adapter
+- `packageName` — canonical package name from `--package-name` or `--purl`
+- `workspacePackage` — the supplied scope hint or `unknown`
+- `manifestPaths[]` — relevant `package.json` files in scope
+- `directDeclarations[]` — direct declarations of the package in relevant manifests
+- `observedVersions[]` — concretely observed active versions
+- `reachableImporters[]` — observed importers or workspace entry points
+- `packagePresent` — whether the package appears in the active resolution at all
 
 ### `trace`
 
-Liefert Dependency-Pfade und kontrollierbare Hebel für Gates `[R3]`–`[R5]`.
+Provides dependency paths and controllable levers for Gates `[R3]`–`[R5]`.
 
-Pflichtsemantik:
+Required semantics:
 
-- `controllableParents[]` — direkte Hebel in relevanten Manifests
-- `evidencePaths[]` — kompakte beobachtete Pfade vom Importer bis zum betroffenen Paket
-- `candidateLevers[]` — nur mögliche Strategierichtungen, keine finale Entscheidung
+- `controllableParents[]` — direct levers in relevant manifests
+- `evidencePaths[]` — compact observed paths from importer to affected package
+- `candidateLevers[]` — possible strategy directions only, not a final decision
 
 ### `verify`
 
-Liefert den normativen Verifikationsfakt für Gate `[R7]`.
+Provides the normative verification fact for Gate `[R7]`.
 
-Pflichtsemantik:
+Required semantics:
 
 - `dependencyCheck` — `pass | fail`
-- `observedVersions[]` — aktuell beobachtete Versionen
-- `reachableVulnerableVersions[]` — noch aktive problematische Versionen
-- `remainingPaths[]` — Pfade, über die problematische Versionen weiterhin erreichbar sind
-- `summary` — knappe menschenlesbare Kurzfassung
+- `observedVersions[]` — currently observed versions
+- `reachableVulnerableVersions[]` — still-active problematic versions
+- `remainingPaths[]` — paths through which problematic versions remain reachable
+- `summary` — brief human-readable summary
 
-## Eingangsregeln
+## Input rules
 
-- `--repo-root` ist der kanonische Repo-Ausgangspunkt.
-- `--package-name` und `--purl` sind alternative Wege zur Paketidentität; mindestens eines davon muss vorhanden sein.
-- `--workspace-package` ist ein Scope-Hint und darf `unknown` sein.
-- `verify` braucht mindestens eine explizite `--vulnerable-version`.
+- `--repo-root` is the canonical repo root.
+- `--package-name` and `--purl` are alternative identity inputs; at least one is required.
+- `--workspace-package` is a scope hint and may be `unknown`.
+- `verify` requires at least one explicit `--vulnerable-version`.
 
-## Qualitätsregeln
+## Quality rules
 
-- JSON-Ausgabe bleibt klein und dedupliziert.
-- Pfade werden begrenzt; das Script ist kein kompletter Graph-Dump.
-- Direkte Deklarationen werden aus Manifesten belegt, nicht geraten.
-- Verifikationsaussagen basieren auf dem aktiven Dependency-Graph des gewählten Adapters.
-- Wenn ein Adapter die Information nicht belastbar liefern kann, muss er klar fehlschlagen.
+- Keep JSON output small and deduplicated.
+- Limit path output; this is not a full graph dump.
+- Back direct declarations with manifest evidence, not guesses.
+- Base verification claims on the active dependency graph of the selected adapter.
+- If an adapter cannot produce trustworthy data, it must fail clearly.
 
-## Nicht erlaubt
+## Forbidden
 
-- manuelle Resolver-Interpretation großer Lockfiles, wenn `dep.py` die Information liefern kann
-- freie Umdeutung der Felder im Resolver
-- stilles Umschalten auf einen anderen Manager bei Adapterfehlern
+- manual resolver interpretation of large lockfiles when `dep.py` can provide the fact
+- reinterpretation of these fields inside the resolver
+- silent switching to another manager after an adapter failure

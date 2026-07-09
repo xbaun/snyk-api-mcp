@@ -3,10 +3,10 @@
 ## Ownership
 
 - Owner: `snyk-orchestration`
-- Diese Datei enthält nur permanente, repo-weite Cross-Session-Learnings.
-- Resolver-Agenten schreiben **nicht direkt** in diese Datei.
-- Promotionen aus `.synk/{sessionId}/GOTCHAS.md` erfolgen nur nach validiertem Advisory-Durchlauf.
+- This file contains only permanent, repo-wide, cross-session learnings.
+- Resolver agents do **not** write to this file directly.
+- Promotions from `.synk/{sessionId}/GOTCHAS.md` happen only after a validated advisory run.
 
 ## Permanent Rules
 
-<!-- Neue permanente Regeln im Format aus .github/skills/snyk-orchestration/references/gotchas-policy.md -->
+<!-- Add permanent rules using the format from .github/skills/snyk-orchestration/references/gotchas-policy.md -->
