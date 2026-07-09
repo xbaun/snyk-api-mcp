@@ -1,5 +1,5 @@
 import type { components } from '../snyk/types/snyk-rest.d.ts';
-import { normalizeVersion, parseUpgradePackageValue } from './helpers.js';
+import { normalizeVersion } from './helpers.js';
 
 // ---------------------------------------------------------------------------
 // Project classification
@@ -10,6 +10,7 @@ export type ProjectKind = 'package' | 'code' | 'container' | 'unknown';
 export interface ProjectClassification {
   projectId: string;
   projectName: string;
+  projectType: string;
   kind: ProjectKind;
   workspacePackage: string | null;
 }
@@ -72,6 +73,36 @@ const PACKAGE_MANAGER_TYPES: ReadonlySet<string> = new Set([
   'yarn-workspace',
 ]);
 
+const PURL_TYPE_BY_PROJECT_TYPE: Readonly<Record<string, string>> = {
+  apk: 'apk',
+  cargo: 'cargo',
+  cocoapods: 'cocoapods',
+  composer: 'composer',
+  conan: 'conan',
+  deb: 'deb',
+  golang: 'golang',
+  golangdep: 'golang',
+  gomodules: 'golang',
+  govendor: 'golang',
+  gradle: 'maven',
+  hex: 'hex',
+  maven: 'maven',
+  npm: 'npm',
+  nuget: 'nuget',
+  pip: 'pypi',
+  pipenv: 'pypi',
+  pnpm: 'npm',
+  poetry: 'pypi',
+  pub: 'pub',
+  rpm: 'rpm',
+  rubygems: 'gem',
+  sbt: 'maven',
+  swift: 'swift',
+  uv: 'pypi',
+  yarn: 'npm',
+  'yarn-workspace': 'npm',
+};
+
 /**
  * Classify a Snyk project into a kind using the API's `type` field.
  *
@@ -81,9 +112,16 @@ export function classifyProject(project: RestProject): ProjectClassification {
   const projectType = (project?.attributes?.type as string) ?? '';
   const name = (project?.attributes?.name as string) ?? '';
   const targetFile = (project?.attributes?.target_file as string) ?? '';
-  const base: Pick<ProjectClassification, 'projectId' | 'projectName'> = {
+  const workspacePackage =
+    deriveWorkspacePackage(targetFile) ??
+    deriveWorkspacePackageFromProjectName(name);
+  const base: Pick<
+    ProjectClassification,
+    'projectId' | 'projectName' | 'projectType'
+  > = {
     projectId: project.id ?? '',
     projectName: name,
+    projectType,
   };
 
   if (projectType === 'dockerfile') {
@@ -91,18 +129,18 @@ export function classifyProject(project: RestProject): ProjectClassification {
   }
 
   if (projectType === 'sast') {
-    return { ...base, kind: 'code', workspacePackage: null };
+    return { ...base, kind: 'code', workspacePackage };
   }
 
   if (PACKAGE_MANAGER_TYPES.has(projectType)) {
     return {
       ...base,
       kind: 'package',
-      workspacePackage: deriveWorkspacePackage(targetFile),
+      workspacePackage,
     };
   }
 
-  return { ...base, kind: 'unknown', workspacePackage: null };
+  return { ...base, kind: 'unknown', workspacePackage };
 }
 
 // ---------------------------------------------------------------------------
@@ -113,29 +151,19 @@ export interface LedgerIssue {
   advisoryKey: string;
   restIssueId: string;
   issueKey: string;
-  vulnerabilityId?: string;
   issueType: 'package_vulnerability' | 'code';
   severity: string;
   riskScore: number;
   title: string;
   createdAt: string;
-  status: string;
   projectId: string;
   projectName: string;
-  workspacePackage: string | null;
-  targetId: string;
-  package: {
-    name: string | null;
-    version: string | null;
-    purl: string | null;
-    fixVersions: string[];
-  };
-  code: {
-    file: string | null;
-    startLine: number | null;
-    endLine: number | null;
-    commitId: string | null;
-  } | null;
+  workspacePackage?: string;
+  packageName?: string;
+  purl?: string;
+  filePath?: string;
+  startLine?: number;
+  endLine?: number;
 }
 
 export interface LedgerAdvisory {
@@ -149,7 +177,78 @@ export interface LedgerAdvisory {
   affectedWorkspacePackages: string[];
   createdAt: string;
   riskScoreMax: number;
-  packageHint: string | null;
+  packageName?: string;
+}
+
+const ISSUE_TYPE_ORDER: Readonly<Record<LedgerIssue['issueType'], number>> = {
+  package_vulnerability: 0,
+  code: 1,
+};
+
+const SEVERITY_ORDER: Readonly<Record<string, number>> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
+
+function compareIssueTypes(
+  a: LedgerIssue['issueType'],
+  b: LedgerIssue['issueType'],
+) {
+  return (
+    (ISSUE_TYPE_ORDER[a] ?? Number.MAX_SAFE_INTEGER) -
+    (ISSUE_TYPE_ORDER[b] ?? Number.MAX_SAFE_INTEGER)
+  );
+}
+
+function compareSeverities(a: string, b: string) {
+  return (
+    (SEVERITY_ORDER[a] ?? Number.MAX_SAFE_INTEGER) -
+    (SEVERITY_ORDER[b] ?? Number.MAX_SAFE_INTEGER)
+  );
+}
+
+function compareStringsAsc(a: string | undefined, b: string | undefined) {
+  return (a ?? '').localeCompare(b ?? '');
+}
+
+function compareNumbersDesc(a: number, b: number) {
+  return b - a;
+}
+
+function pickHighestSeverity(values: string[]) {
+  return [...values].sort(compareSeverities)[0] ?? 'low';
+}
+
+export function sortLedgerIssues(issues: LedgerIssue[]): LedgerIssue[] {
+  return [...issues].sort((a, b) => {
+    return (
+      compareIssueTypes(a.issueType, b.issueType) ||
+      compareSeverities(a.severity, b.severity) ||
+      compareNumbersDesc(a.riskScore, b.riskScore) ||
+      compareStringsAsc(a.createdAt, b.createdAt) ||
+      compareStringsAsc(a.advisoryKey, b.advisoryKey) ||
+      compareStringsAsc(a.projectId, b.projectId) ||
+      compareStringsAsc(a.restIssueId, b.restIssueId)
+    );
+  });
+}
+
+export function sortLedgerAdvisories(
+  advisories: LedgerAdvisory[],
+): LedgerAdvisory[] {
+  return [...advisories].sort((a, b) => {
+    return (
+      compareIssueTypes(a.issueType, b.issueType) ||
+      compareSeverities(a.severity, b.severity) ||
+      compareNumbersDesc(a.riskScoreMax, b.riskScoreMax) ||
+      compareNumbersDesc(a.affectedProjectCount, b.affectedProjectCount) ||
+      compareNumbersDesc(a.issueCount, b.issueCount) ||
+      compareStringsAsc(a.createdAt, b.createdAt) ||
+      compareStringsAsc(a.advisoryKey, b.advisoryKey)
+    );
+  });
 }
 
 export function groupIssuesToAdvisories(
@@ -175,7 +274,7 @@ export function groupIssuesToAdvisories(
       ...new Set(
         group
           .map((i) => i.workspacePackage)
-          .filter((p): p is string => Boolean(p)),
+          .filter((value): value is string => Boolean(value)),
       ),
     ];
     const riskScores = group.map((i) => i.riskScore);
@@ -184,11 +283,14 @@ export function groupIssuesToAdvisories(
         .map((i) => i.createdAt)
         .filter(Boolean)
         .sort()[0] ?? '';
+    const packageName =
+      group.find((issue) => issue.issueType === 'package_vulnerability')
+        ?.packageName ?? undefined;
 
     advisories.push({
       advisoryKey: first.advisoryKey,
       title: first.title,
-      severity: first.severity,
+      severity: pickHighestSeverity(group.map((issue) => issue.severity)),
       issueType: first.issueType,
       issueCount: group.length,
       affectedProjectCount: affectedProjectIds.length,
@@ -196,11 +298,11 @@ export function groupIssuesToAdvisories(
       affectedWorkspacePackages,
       createdAt,
       riskScoreMax: Math.max(...riskScores),
-      packageHint: first.package.name ?? null,
+      ...(packageName ? { packageName } : {}),
     });
   }
 
-  return advisories.sort((a, b) => b.riskScoreMax - a.riskScoreMax);
+  return sortLedgerAdvisories(advisories);
 }
 
 export function dedupeLedgerIssues(issues: LedgerIssue[]): LedgerIssue[] {
@@ -220,52 +322,38 @@ export function dedupeLedgerIssues(issues: LedgerIssue[]): LedgerIssue[] {
 // Package data extraction
 // ---------------------------------------------------------------------------
 
-export function extractPackageDataFromIssue(
+export function extractPackageIdentityFromIssue(
   item: RestIssue,
-): LedgerIssue['package'] {
+  projectType: string,
+): Pick<LedgerIssue, 'packageName' | 'purl'> {
   const coordinates = item.attributes.coordinates ?? [];
-
-  const packages: Array<{
-    name: string | null;
-    version: string | null;
-    purl: string | null;
-  }> = [];
 
   for (const coord of coordinates) {
     const reps = coord.representations ?? [];
     for (const rep of reps) {
       if (!('dependency' in rep)) continue;
 
-      packages.push({
-        name: rep.dependency.package_name,
-        version: normalizeVersion(rep.dependency.package_version),
-        purl: null,
-      });
+      const packageName = rep.dependency.package_name ?? undefined;
+      const packageVersion = normalizeVersion(rep.dependency.package_version);
+      const purl = buildPackagePurl(projectType, packageName, packageVersion);
+
+      return {
+        ...(packageName ? { packageName } : {}),
+        ...(purl ? { purl } : {}),
+      };
     }
   }
 
-  const fixVersions: string[] = [];
-  for (const coord of coordinates) {
-    const remedies = coord.remedies ?? [];
-    for (const remedy of remedies) {
-      fixVersions.push(...parseUpgradePackageValue(remedy.meta?.data.fixed_in));
-    }
-  }
-
-  const firstPackage = packages[0] ?? null;
-  return {
-    name: firstPackage?.name ?? null,
-    version: firstPackage?.version ?? null,
-    purl: firstPackage?.purl ?? null,
-    fixVersions: [...new Set(fixVersions)],
-  };
+  return {};
 }
 
 // ---------------------------------------------------------------------------
 // Code data extraction
 // ---------------------------------------------------------------------------
 
-export function extractCodeDataFromIssue(item: RestIssue): LedgerIssue['code'] {
+export function extractCodeLocationFromIssue(
+  item: RestIssue,
+): Pick<LedgerIssue, 'filePath' | 'startLine' | 'endLine'> {
   const coordinates = item.attributes.coordinates ?? [];
 
   for (const coord of coordinates) {
@@ -274,16 +362,19 @@ export function extractCodeDataFromIssue(item: RestIssue): LedgerIssue['code'] {
       if ('sourceLocation' in rep) {
         const loc = rep.sourceLocation;
         return {
-          file: loc.file,
-          startLine: loc.region?.start.line ?? null,
-          endLine: loc.region?.end.line ?? null,
-          commitId: loc.commit_id ?? null,
+          filePath: loc.file,
+          ...(typeof loc.region?.start.line === 'number'
+            ? { startLine: loc.region.start.line }
+            : {}),
+          ...(typeof loc.region?.end.line === 'number'
+            ? { endLine: loc.region.end.line }
+            : {}),
         };
       }
     }
   }
 
-  return null;
+  return {};
 }
 
 // ---------------------------------------------------------------------------
@@ -309,6 +400,26 @@ export function extractRiskScore(item: RestIssue): number {
   return item.attributes.risk?.score?.value ?? 0;
 }
 
+function buildPackagePurl(
+  projectType: string,
+  packageName: string | undefined,
+  packageVersion: string | null,
+) {
+  if (!packageName || !packageVersion) return undefined;
+
+  const purlType = PURL_TYPE_BY_PROJECT_TYPE[projectType];
+  if (!purlType) return undefined;
+
+  if (purlType === 'maven' && packageName.includes(':')) {
+    const [groupId, artifactId] = packageName.split(':', 2);
+    if (groupId && artifactId) {
+      return `pkg:${purlType}/${groupId}/${artifactId}@${packageVersion}`;
+    }
+  }
+
+  return `pkg:${purlType}/${packageName}@${packageVersion}`;
+}
+
 /**
  * Extract a workspace-relative directory path from a Snyk `target_file`.
  *
@@ -318,4 +429,14 @@ export function extractRiskScore(item: RestIssue): number {
 export function deriveWorkspacePackage(targetFile: string): string | null {
   const lastSlash = targetFile.lastIndexOf('/');
   return lastSlash >= 0 ? targetFile.substring(0, lastSlash) : null;
+}
+
+export function deriveWorkspacePackageFromProjectName(
+  projectName: string,
+): string | null {
+  const candidate = projectName.includes(':')
+    ? (projectName.split(':').pop() ?? '')
+    : projectName;
+
+  return deriveWorkspacePackage(candidate);
 }

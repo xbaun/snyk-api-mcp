@@ -98,20 +98,22 @@ function summarizeIssuePath(path: SnykPathNode[]): PathSummary {
 
 export function registerAnalysisTools(server: McpServer) {
   // -----------------------------------------------------------------------
-  // snyk_get_project_issue_analysis
+  // snyk_get_project_package_vulnerability_analysis
   // -----------------------------------------------------------------------
 
   server.registerTool(
-    'snyk_get_project_issue_analysis',
+    'snyk_get_project_package_vulnerability_analysis',
     {
       description:
-        'Get combined analysis for a specific project issue and package PURL. ' +
-        'Requires an exact REST issue UUID and an exact package PURL.',
+        'Analyze one package_vulnerability issue inside one project using the exact REST issue UUID and exact package PURL. ' +
+        'Returns dependency paths, direct-dependency context, fix-version hints, and project-scoped remediation guidance.',
       inputSchema: {
         orgId: z.string().describe('Snyk Organization ID.'),
         projectId: z
           .string()
-          .describe('Snyk Project ID in which the issue appears.'),
+          .describe(
+            'Snyk Project ID in which the package vulnerability appears.',
+          ),
         restIssueId: z
           .string()
           .describe(
@@ -132,7 +134,10 @@ export function registerAnalysisTools(server: McpServer) {
       requireUuid('projectId', projectId);
 
       const apiVersion = resolveRestApiVersion();
-      requireRestIssueUuid('snyk_get_project_issue_analysis', restIssueId);
+      requireRestIssueUuid(
+        'snyk_get_project_package_vulnerability_analysis',
+        restIssueId,
+      );
 
       const { restIssue, issueKey } = await resolveIssueKeyFromRestId(
         orgId,
@@ -199,8 +204,15 @@ export function registerAnalysisTools(server: McpServer) {
       );
 
       const result = {
-        query: { orgId, projectId, restIssueId, purl },
+        query: {
+          orgId,
+          projectId,
+          restIssueId,
+          purl,
+          issueType: 'package_vulnerability',
+        },
         issue: {
+          issueType: restIssue?.issueType ?? 'package_vulnerability',
           restIssueId,
           issueKey,
           vulnerabilityId: packageIssue?.vulnerabilityId ?? null,
@@ -224,6 +236,7 @@ export function registerAnalysisTools(server: McpServer) {
             null,
         },
         issueContext: {
+          directDependencies,
           introducedThrough: directDependencies,
           remediation: shortestPath?.remediation ?? null,
           exploitMaturity:
@@ -241,7 +254,9 @@ export function registerAnalysisTools(server: McpServer) {
       };
 
       return {
-        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        content: [
+          { type: 'text' as const, text: JSON.stringify(result, null, 2) },
+        ],
       };
     },
   );

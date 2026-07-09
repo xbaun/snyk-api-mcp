@@ -4,19 +4,21 @@ import { z } from 'zod';
 import { resolveRestApiVersion, snykRestApi } from '../snyk/client.js';
 import type { operations } from '../snyk/types/snyk-rest.d.ts';
 import { requireUuid } from '../utils/helpers.js';
+import type {
+  LedgerAdvisory,
+  LedgerIssue,
+  ProjectClassification,
+  RestIssue,
+  RestProject,
+} from '../utils/ledger.js';
 import {
   classifyProject,
   dedupeLedgerIssues,
-  extractCodeDataFromIssue,
-  extractPackageDataFromIssue,
+  extractCodeLocationFromIssue,
+  extractPackageIdentityFromIssue,
   extractRiskScore,
   groupIssuesToAdvisories,
-  type LedgerAdvisory,
-  type LedgerIssue,
-  type ProjectClassification,
-  type ProjectKind,
-  type RestIssue,
-  type RestProject,
+  sortLedgerIssues,
   toLedgerIssueType,
 } from '../utils/ledger.js';
 
@@ -24,25 +26,23 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-interface ToolInput {
+interface TargetToolInput {
   orgId: string;
   targetId: string;
-  status: 'open' | 'resolved' | 'ignored';
-  issueTypes: Array<'package' | 'code'>;
-  severities?: Array<'low' | 'medium' | 'high' | 'critical'>;
-  includeAdvisoryGroups: boolean;
-  includeIssueInstances: boolean;
-  includeZeroIssueProjects: boolean;
-  allowPartialResults: boolean;
-  projectConcurrency: number;
 }
 
-interface LedgerSeedResult {
+interface ProjectToolInput {
+  orgId: string;
+  projectId: string;
+}
+
+interface TargetLedgerSeedResult {
+  $schema: string;
   query: {
     orgId: string;
     targetId: string;
-    status: string;
-    issueTypes: string[];
+    status: 'open';
+    issueTypes: Array<'package_vulnerability' | 'code'>;
   };
   target: {
     id: string;
@@ -51,36 +51,41 @@ interface LedgerSeedResult {
   collection: {
     fetchedAt: string;
     projectCount: number;
-    queriedProjectCount: number;
-    skippedProjectCount: number;
-    issueInstanceCount: number;
+    issueCount: number;
     advisoryCount: number;
-    partial: boolean;
   };
-  projects: {
-    queried: Array<{
-      projectId: string;
-      projectName: string;
-      kind: ProjectKind;
-      workspacePackage: string | null;
-    }>;
-    skipped: Array<{
-      projectId: string;
-      projectName: string;
-      reason: string;
-    }>;
-    failures: Array<{
-      projectId: string;
-      projectName: string;
-      stage: string;
-      message: string;
-    }>;
+  issues: LedgerIssue[];
+  advisories: LedgerAdvisory[];
+}
+
+interface ProjectLedgerSeedResult {
+  $schema: string;
+  query: {
+    orgId: string;
+    projectId: string;
+    status: 'open';
+    issueTypes: Array<'package_vulnerability' | 'code'>;
+  };
+  project: {
+    id: string;
+    name: string;
+    type: string;
+    kind: ProjectClassification['kind'];
+    targetId: string | null;
+    workspacePackage: string | null;
+  };
+  collection: {
+    fetchedAt: string;
+    projectCount: number;
+    issueCount: number;
+    advisoryCount: number;
   };
   issues: LedgerIssue[];
   advisories: LedgerAdvisory[];
 }
 
 type StatusFilter = 'open' | 'resolved' | 'ignored';
+type SeedIssueType = 'package_vulnerability' | 'code';
 
 type RequestRateLimiter = {
   schedule<T>(operation: () => Promise<T>): Promise<T>;
@@ -90,15 +95,17 @@ type RequestRateLimiter = {
 const ISSUE_REQUEST_INTERVAL_MS = 500;
 const DEFAULT_RETRY_AFTER_MS = 5_000;
 const MAX_RATE_LIMIT_RETRIES = 4;
+const PROJECT_CONCURRENCY = 6;
+const LEDGER_SEED_STATUS = 'open' as const;
+const LEDGER_SEED_ISSUE_TYPES = ['package_vulnerability', 'code'] as const;
+const TARGET_LEDGER_SEED_SCHEMA_PATH =
+  '../../.github/skills/snyk-session-init/schemas/issues-ledger-seed.schema.json';
+const PROJECT_LEDGER_SEED_SCHEMA_PATH =
+  '../../.github/skills/snyk-session-init/schemas/project-issues-ledger-seed.schema.json';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function mapIssueType(type: 'package' | 'code') {
-  if (type === 'package') return 'package_vulnerability' as const;
-  return 'code' as const;
-}
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -184,9 +191,7 @@ function coerceQueryValue(value: string): boolean | number | string {
 }
 
 type ListIssuesQuery = operations['listOrgIssues']['parameters']['query'];
-
 type ListProjectsQuery = operations['listOrgProjects']['parameters']['query'];
-
 type ListIssuesPage =
   operations['listOrgIssues']['responses'][200]['content']['application/vnd.api+json'];
 
@@ -198,6 +203,25 @@ const restProjectSchema = z
       type: z.string(),
       target_file: z.string().default(''),
     }),
+    relationships: z
+      .object({
+        target: z
+          .object({
+            data: z.union([
+              z.object({ id: z.string() }).passthrough(),
+              z.array(z.object({ id: z.string() }).passthrough()),
+            ]),
+          })
+          .optional(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+
+const restProjectDetailSchema = z
+  .object({
+    data: restProjectSchema.optional(),
   })
   .passthrough();
 
@@ -214,6 +238,7 @@ const restProjectPageSchema = z
   .passthrough();
 
 type RestProjectPage = z.infer<typeof restProjectPageSchema>;
+type RestProjectResource = z.infer<typeof restProjectSchema>;
 
 function getPageItems<T>(page: { data?: T[] } | null | undefined): T[] {
   return page?.data ?? [];
@@ -237,63 +262,69 @@ function parseProjectPage(page: unknown): RestProjectPage {
   return restProjectPageSchema.parse(page);
 }
 
+function parseProjectDetail(page: unknown) {
+  return restProjectDetailSchema.parse(page);
+}
+
+function extractTargetId(project: RestProjectResource): string | null {
+  const targetData = project.relationships?.target?.data;
+
+  if (Array.isArray(targetData)) {
+    return targetData[0]?.id ?? null;
+  }
+
+  return targetData?.id ?? null;
+}
+
+function isLedgerRelevantProject(project: ProjectClassification) {
+  return project.kind === 'package' || project.kind === 'code';
+}
+
 function buildIssueQuery({
   apiVersion,
   issueType,
-  severity,
   status,
   projectId,
 }: {
   apiVersion: string;
-  issueType: 'package' | 'code';
-  severity?: 'low' | 'medium' | 'high' | 'critical';
+  issueType: SeedIssueType;
   status: StatusFilter;
   projectId: string;
 }): ListIssuesQuery {
   const query: ListIssuesQuery = {
     version: apiVersion,
     limit: 100,
-    type: mapIssueType(issueType),
+    type: issueType,
     'scan_item.id': projectId,
     'scan_item.type': 'project',
   };
 
-  if (severity) {
-    query['effective_severity_level'] = [severity];
-  }
-
   if (status === 'ignored') {
     query['ignored'] = true;
-  } else if (status) {
+  } else {
     query['status'] = [status];
   }
 
   return query;
 }
 
-/**
- * Fetch ALL issues for a given project + type, handling pagination internally.
- */
 async function fetchAllProjectIssues(
   orgId: string,
   projectId: string,
-  issueType: 'package' | 'code',
+  issueType: SeedIssueType,
   options: {
     apiVersion: string;
     rateLimiter: RequestRateLimiter;
-    severity?: 'low' | 'medium' | 'high' | 'critical';
     status: StatusFilter;
   },
 ): Promise<RestIssue[]> {
   const initialQuery = buildIssueQuery({
     apiVersion: options.apiVersion,
     issueType,
-    severity: options.severity,
     status: options.status,
     projectId,
   });
 
-  // First page
   const firstPage = await fetchIssuesPage(
     orgId,
     initialQuery,
@@ -301,28 +332,21 @@ async function fetchAllProjectIssues(
   );
   const items = getPageItems(firstPage);
 
-  // Check for remaining pages by inspecting `meta`/`links`
   if (!firstPage) return items;
 
   let nextUrl = getNextPageUrl(firstPage);
 
   while (nextUrl) {
     const nextQuery = parseNextQuery(nextUrl);
-
     const nextPageData = await fetchIssuesPage(
       orgId,
-      // Snyk's own `next` link encodes version/type/status correctly.
-      // Cast through `unknown` because openapi-fetch requires typed query.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       nextQuery as unknown as any,
       options.rateLimiter,
     );
 
-    const nextItems = getPageItems(nextPageData);
-    items.push(...nextItems);
-
-    if (!nextPageData) break;
-    nextUrl = getNextPageUrl(nextPageData);
+    items.push(...getPageItems(nextPageData));
+    nextUrl = nextPageData ? getNextPageUrl(nextPageData) : undefined;
   }
 
   return items;
@@ -350,7 +374,6 @@ async function fetchIssuesPage(
     const retryAfterMs = parseRetryAfterMs(
       result.response.headers.get('retry-after'),
     );
-
     rateLimiter.defer(retryAfterMs);
 
     if (attempt === MAX_RATE_LIMIT_RETRIES) {
@@ -391,9 +414,6 @@ async function fetchAllTargetProjects(
   );
 
   const items = getPageItems(firstPage);
-
-  if (!firstPage) return items;
-
   let nextUrl = getNextPageUrl(firstPage);
 
   while (nextUrl) {
@@ -409,14 +429,36 @@ async function fetchAllTargetProjects(
       ),
     );
 
-    const nextItems = getPageItems(nextPageData);
-    items.push(...nextItems);
-
-    if (!nextPageData) break;
+    items.push(...getPageItems(nextPageData));
     nextUrl = getNextPageUrl(nextPageData);
   }
 
   return items;
+}
+
+async function fetchProjectById(
+  orgId: string,
+  projectId: string,
+  apiVersion: string,
+): Promise<RestProjectResource> {
+  const detail = parseProjectDetail(
+    snykRestApi.expectData<unknown>(
+      await snykRestApi.client.GET('/orgs/{org_id}/projects/{project_id}', {
+        params: {
+          path: { org_id: orgId, project_id: projectId },
+          query: { version: apiVersion },
+        },
+      }),
+    ),
+  );
+
+  if (!detail.data) {
+    throw new Error(
+      `Snyk project '${projectId}' returned no project resource.`,
+    );
+  }
+
+  return detail.data;
 }
 
 async function fetchTargetDisplayName(
@@ -440,28 +482,25 @@ async function fetchTargetDisplayName(
   }
 }
 
-function appendMappedIssues(
-  targetIssues: LedgerIssue[],
+function mapItemsToLedgerIssues(
   items: RestIssue[],
   project: ProjectClassification,
-  targetId: string,
 ) {
-  targetIssues.push(
-    ...items.map((item) => mapItemToLedgerIssue(item, project, targetId)),
-  );
+  return items.map((item) => mapItemToLedgerIssue(item, project));
 }
-
-// ---------------------------------------------------------------------------
-// Main mapper: REST issue → LedgerIssue
-// ---------------------------------------------------------------------------
 
 function mapItemToLedgerIssue(
   item: RestIssue,
   project: ProjectClassification,
-  targetId: string,
 ): LedgerIssue {
   const attrs = item.attributes;
   const riskScore = extractRiskScore(item);
+  const packageIdentity =
+    attrs.type === 'package_vulnerability'
+      ? extractPackageIdentityFromIssue(item, project.projectType)
+      : {};
+  const codeLocation =
+    attrs.type === 'code' ? extractCodeLocationFromIssue(item) : {};
 
   return {
     advisoryKey: attrs.key,
@@ -472,14 +511,82 @@ function mapItemToLedgerIssue(
     riskScore,
     title: attrs.title,
     createdAt: attrs.created_at,
-    status: attrs.status,
     projectId: project.projectId,
     projectName: project.projectName,
-    workspacePackage: project.workspacePackage,
-    targetId,
-    package: extractPackageDataFromIssue(item),
-    code: extractCodeDataFromIssue(item),
+    ...(project.workspacePackage
+      ? { workspacePackage: project.workspacePackage }
+      : {}),
+    ...packageIdentity,
+    ...codeLocation,
   };
+}
+
+function buildLedgerSeedTasks(projects: ProjectClassification[]) {
+  const tasks: Array<{
+    project: ProjectClassification;
+    issueType: SeedIssueType;
+  }> = [];
+
+  for (const project of projects) {
+    for (const issueType of LEDGER_SEED_ISSUE_TYPES) {
+      if (issueType === 'code' && project.kind !== 'code') continue;
+      if (issueType === 'package_vulnerability' && project.kind !== 'package') {
+        continue;
+      }
+
+      tasks.push({ project, issueType });
+    }
+  }
+
+  return tasks;
+}
+
+async function collectLedgerIssuesForProjects(
+  orgId: string,
+  projects: ProjectClassification[],
+  options: {
+    apiVersion: string;
+    rateLimiter: RequestRateLimiter;
+    status: StatusFilter;
+  },
+) {
+  const tasks = buildLedgerSeedTasks(projects);
+  const allIssues: LedgerIssue[] = [];
+
+  for (let i = 0; i < tasks.length; i += PROJECT_CONCURRENCY) {
+    const chunk = tasks.slice(i, i + PROJECT_CONCURRENCY);
+    const chunkResults = await Promise.allSettled(
+      chunk.map(async (task) => {
+        const items = await fetchAllProjectIssues(
+          orgId,
+          task.project.projectId,
+          task.issueType,
+          options,
+        );
+
+        return {
+          task,
+          issues: mapItemsToLedgerIssues(items, task.project),
+        };
+      }),
+    );
+
+    for (let j = 0; j < chunkResults.length; j += 1) {
+      const result = chunkResults[j]!;
+      const task = chunk[j]!;
+
+      if (result.status === 'rejected') {
+        throw new Error(
+          `Failed to fetch issues for project ${task.project.projectName} (${task.project.projectId}). ` +
+            `${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
+        );
+      }
+
+      allIssues.push(...result.value.issues);
+    }
+  }
+
+  return sortLedgerIssues(dedupeLedgerIssues(allIssues));
 }
 
 // ---------------------------------------------------------------------------
@@ -491,13 +598,12 @@ export function registerLedgerSeedTool(server: McpServer) {
     'snyk_get_target_ledger_seed',
     {
       description:
-        'Ledger-seed endpoint: fetches ALL open package/code issues for all ' +
-        'relevant projects of a Snyk target, then returns them normalised, ' +
-        'project-annotated, and optionally pre-grouped into advisories. ' +
-        'The output is ready to directly materialise an issues-ledger.json for ' +
-        'remediation orchestration — no further detail calls needed. ' +
-        'Use snyk_resolve_org_id and snyk_get_targets first to obtain orgId ' +
-        'and targetId.',
+        'Fetch the canonical issues-ledger seed for one Snyk target. ' +
+        'This enumerates all relevant projects, paginates all open package_vulnerability and code issues, ' +
+        'and returns a minimal seed document with flat canonical issues[] plus grouped advisories[]. ' +
+        'Persist the response unchanged as issues-ledger-seed.json. ledger.py init materializes from advisories[] and only validates issues[]; ' +
+        'do not rename issueKey/projectId/issueType to legacy aliases like key/scanItemId/type. ' +
+        'Use snyk_resolve_org_id and snyk_get_targets first to obtain orgId and targetId.',
       inputSchema: {
         orgId: z
           .string()
@@ -509,227 +615,41 @@ export function registerLedgerSeedTool(server: McpServer) {
           .describe(
             'Snyk target ID (UUID). Use snyk_get_targets to discover targets for an org.',
           ),
-        status: z
-          .enum(['open', 'resolved', 'ignored'])
-          .optional()
-          .default('open')
-          .describe('Filter by issue status. Default: open.'),
-        issueTypes: z
-          .array(z.enum(['package', 'code']))
-          .optional()
-          .default(['package', 'code'])
-          .describe(
-            'Which issue types to fetch. Default: both package and code.',
-          ),
-        severities: z
-          .array(z.enum(['low', 'medium', 'high', 'critical']))
-          .optional()
-          .describe(
-            'Filter by severity levels. Omit to include all severities.',
-          ),
-        includeAdvisoryGroups: z
-          .boolean()
-          .optional()
-          .default(true)
-          .describe(
-            'Whether to return pre-grouped advisory summaries. Default: true.',
-          ),
-        includeIssueInstances: z
-          .boolean()
-          .optional()
-          .default(true)
-          .describe(
-            'Whether to return the flat issue instances list. Default: true.',
-          ),
-        includeZeroIssueProjects: z
-          .boolean()
-          .optional()
-          .default(false)
-          .describe(
-            'Include projects with zero issues in the response. Default: false.',
-          ),
-        allowPartialResults: z
-          .boolean()
-          .optional()
-          .default(false)
-          .describe(
-            'If true, continue fetching even if some projects fail; failures ' +
-              'are listed under projects.failures. Default: false.',
-          ),
-        projectConcurrency: z
-          .number()
-          .optional()
-          .default(6)
-          .describe(
-            'Maximum concurrent project issue-fetch operations. Default: 6.',
-          ),
       },
     },
-    async ({
-      orgId,
-      targetId,
-      status,
-      issueTypes,
-      severities,
-      includeAdvisoryGroups,
-      includeIssueInstances,
-      includeZeroIssueProjects,
-      allowPartialResults,
-      projectConcurrency,
-    }: ToolInput) => {
+    async ({ orgId, targetId }: TargetToolInput) => {
       requireUuid('orgId', orgId);
       requireUuid('targetId', targetId);
 
       const apiVersion = resolveRestApiVersion();
       const rateLimiter = createRequestRateLimiter(ISSUE_REQUEST_INTERVAL_MS);
-
-      // -----------------------------------------------------------------
-      // 1. Fetch projects for this target
-      // -----------------------------------------------------------------
       const allProjects = (
         await fetchAllTargetProjects(orgId, targetId, apiVersion)
       ).map(classifyProject);
-
-      // Fetch target display name
       const targetDisplayName = await fetchTargetDisplayName(
         orgId,
         targetId,
         apiVersion,
       );
-
-      // -----------------------------------------------------------------
-      // 2. Classify projects
-      // -----------------------------------------------------------------
-      const relevantProjects = allProjects.filter(
-        (p) => p.kind === 'package' || p.kind === 'code',
+      const relevantProjects = allProjects.filter(isLedgerRelevantProject);
+      const issues = await collectLedgerIssuesForProjects(
+        orgId,
+        relevantProjects,
+        {
+          apiVersion,
+          rateLimiter,
+          status: LEDGER_SEED_STATUS,
+        },
       );
-      let skippedProjects: LedgerSeedResult['projects']['skipped'] = allProjects
-        .filter((p) => p.kind === 'container' || p.kind === 'unknown')
-        .map((p) => ({
-          projectId: p.projectId,
-          projectName: p.projectName,
-          reason:
-            p.kind === 'container'
-              ? 'container-project'
-              : `unknown-project-type:${p.kind}`,
-        }));
+      const advisories = groupIssuesToAdvisories(issues);
 
-      // -----------------------------------------------------------------
-      // 3. Fan out – fetch issues for each relevant project/type
-      // -----------------------------------------------------------------
-      const failures: LedgerSeedResult['projects']['failures'] = [];
-
-      // Build tasks: for each project × each requested issue type
-      const tasks: Array<{
-        project: ProjectClassification;
-        issueType: 'package' | 'code';
-      }> = [];
-
-      for (const project of relevantProjects) {
-        for (const issueType of issueTypes) {
-          // Skip code-type requests for projects classified as package-only
-          if (issueType === 'code' && project.kind !== 'code') continue;
-          // Skip package-type requests for projects classified as code-only
-          if (issueType === 'package' && project.kind !== 'package') continue;
-          tasks.push({ project, issueType });
-        }
-      }
-
-      const allIssues: LedgerIssue[] = [];
-
-      // Execute tasks with limited concurrency
-      const concurrency = Math.max(1, projectConcurrency);
-      for (let i = 0; i < tasks.length; i += concurrency) {
-        const chunk = tasks.slice(i, i + concurrency);
-        const chunkResults = await Promise.allSettled(
-          chunk.map(async (task) => {
-            const requestedSeverities =
-              severities && severities.length > 0 ? severities : [undefined];
-
-            for (const severity of requestedSeverities) {
-              const items = await fetchAllProjectIssues(
-                orgId,
-                task.project.projectId,
-                task.issueType,
-                { apiVersion, rateLimiter, severity, status },
-              );
-              appendMappedIssues(allIssues, items, task.project, targetId);
-            }
-          }),
-        );
-
-        for (let j = 0; j < chunkResults.length; j++) {
-          const result = chunkResults[j]!;
-          const task = chunk[j]!;
-          if (result.status === 'rejected') {
-            failures.push({
-              projectId: task.project.projectId,
-              projectName: task.project.projectName,
-              stage: 'list-project-issues',
-              message:
-                result.reason instanceof Error
-                  ? result.reason.message
-                  : String(result.reason),
-            });
-            if (!allowPartialResults) {
-              throw new Error(
-                `Failed to fetch issues for project ${task.project.projectName} (${task.project.projectId}). ` +
-                  `Set allowPartialResults=true to continue. Error: ${String(result.reason)}`,
-              );
-            }
-          }
-        }
-      }
-
-      // -----------------------------------------------------------------
-      // 4. Build result
-      // -----------------------------------------------------------------
-      const uniqueIssues = dedupeLedgerIssues(allIssues);
-
-      const advisories = includeAdvisoryGroups
-        ? groupIssuesToAdvisories(uniqueIssues)
-        : [];
-
-      const failedProjectIds = new Set(
-        failures.map((failure) => failure.projectId),
-      );
-      const issueProjectIds = new Set(
-        uniqueIssues.map((issue) => issue.projectId),
-      );
-      const emptyRelevantProjects = relevantProjects.filter(
-        (project) =>
-          !issueProjectIds.has(project.projectId) &&
-          !failedProjectIds.has(project.projectId),
-      );
-
-      const queriedProjects = includeZeroIssueProjects
-        ? relevantProjects
-        : relevantProjects.filter(
-            (project) =>
-              issueProjectIds.has(project.projectId) ||
-              failedProjectIds.has(project.projectId),
-          );
-
-      // Filter out zero-issue projects unless client asks to keep them
-      if (!includeZeroIssueProjects) {
-        if (emptyRelevantProjects.length > 0) {
-          skippedProjects = [
-            ...skippedProjects,
-            ...emptyRelevantProjects.map((p) => ({
-              projectId: p.projectId,
-              projectName: p.projectName,
-              reason: 'zero-issue-project' as const,
-            })),
-          ];
-        }
-      }
-
-      const result: LedgerSeedResult = {
+      const result: TargetLedgerSeedResult = {
+        $schema: TARGET_LEDGER_SEED_SCHEMA_PATH,
         query: {
           orgId,
           targetId,
-          status,
-          issueTypes,
+          status: LEDGER_SEED_STATUS,
+          issueTypes: [...LEDGER_SEED_ISSUE_TYPES],
         },
         target: {
           id: targetId,
@@ -738,23 +658,88 @@ export function registerLedgerSeedTool(server: McpServer) {
         collection: {
           fetchedAt: new Date().toISOString(),
           projectCount: allProjects.length,
-          queriedProjectCount: queriedProjects.length,
-          skippedProjectCount: skippedProjects.length,
-          issueInstanceCount: uniqueIssues.length,
+          issueCount: issues.length,
           advisoryCount: advisories.length,
-          partial: failures.length > 0,
         },
-        projects: {
-          queried: queriedProjects.map((p) => ({
-            projectId: p.projectId,
-            projectName: p.projectName,
-            kind: p.kind,
-            workspacePackage: p.workspacePackage,
-          })),
-          skipped: skippedProjects,
-          failures,
+        issues,
+        advisories,
+      };
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+      };
+    },
+  );
+
+  server.registerTool(
+    'snyk_get_project_ledger_seed',
+    {
+      description:
+        'Fetch the canonical issues-ledger seed for one Snyk project. ' +
+        'This paginates all open package_vulnerability and code issues for exactly one project ' +
+        'and returns a minimal seed document with flat canonical issues[] plus grouped advisories[]. ' +
+        'Persist the response unchanged as issues-ledger-seed.json. ledger.py init materializes from advisories[] and only validates issues[]; ' +
+        'do not rename issueKey/projectId/issueType to legacy aliases like key/scanItemId/type. ' +
+        'Use snyk_get_projects first to obtain orgId and projectId.',
+      inputSchema: {
+        orgId: z
+          .string()
+          .describe(
+            'Snyk organization UUID. Use snyk_resolve_org_id first if you only have a slug.',
+          ),
+        projectId: z
+          .string()
+          .describe(
+            'Snyk project ID (UUID). Use snyk_get_projects to discover projects for an org or target.',
+          ),
+      },
+    },
+    async ({ orgId, projectId }: ProjectToolInput) => {
+      requireUuid('orgId', orgId);
+      requireUuid('projectId', projectId);
+
+      const apiVersion = resolveRestApiVersion();
+      const rateLimiter = createRequestRateLimiter(ISSUE_REQUEST_INTERVAL_MS);
+      const rawProject = await fetchProjectById(orgId, projectId, apiVersion);
+      const project = classifyProject(rawProject);
+
+      if (!isLedgerRelevantProject(project)) {
+        throw new Error(
+          `Project '${project.projectName}' (${project.projectId}) has type '${project.projectType}' classified as '${project.kind}'. ` +
+            "Only 'package' and 'code' projects are supported by snyk_get_project_ledger_seed.",
+        );
+      }
+
+      const issues = await collectLedgerIssuesForProjects(orgId, [project], {
+        apiVersion,
+        rateLimiter,
+        status: LEDGER_SEED_STATUS,
+      });
+      const advisories = groupIssuesToAdvisories(issues);
+
+      const result: ProjectLedgerSeedResult = {
+        $schema: PROJECT_LEDGER_SEED_SCHEMA_PATH,
+        query: {
+          orgId,
+          projectId,
+          status: LEDGER_SEED_STATUS,
+          issueTypes: [...LEDGER_SEED_ISSUE_TYPES],
         },
-        issues: includeIssueInstances ? uniqueIssues : [],
+        project: {
+          id: project.projectId,
+          name: project.projectName,
+          type: project.projectType,
+          kind: project.kind,
+          targetId: extractTargetId(rawProject),
+          workspacePackage: project.workspacePackage,
+        },
+        collection: {
+          fetchedAt: new Date().toISOString(),
+          projectCount: 1,
+          issueCount: issues.length,
+          advisoryCount: advisories.length,
+        },
+        issues,
         advisories,
       };
 

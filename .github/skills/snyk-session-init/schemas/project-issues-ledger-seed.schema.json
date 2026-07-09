@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xbaun.local/snyk-session-init/project-issues-ledger-seed.schema.json",
+  "title": "project-issues-ledger-seed",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["query", "project", "collection", "issues", "advisories"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Relative schema reference emitted by snyk_get_project_ledger_seed and intended to be persisted unchanged with the seed document."
+    },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["orgId", "projectId", "status", "issueTypes"],
+      "properties": {
+        "orgId": { "type": "string", "minLength": 1 },
+        "projectId": { "type": "string", "minLength": 1 },
+        "status": { "const": "open" },
+        "issueTypes": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/issueType" }
+        }
+      }
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "type", "kind", "targetId", "workspacePackage"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "type": "string", "minLength": 1 },
+        "kind": {
+          "type": "string",
+          "enum": ["package", "code", "container", "unknown"]
+        },
+        "targetId": { "type": ["string", "null"] },
+        "workspacePackage": { "type": ["string", "null"] }
+      }
+    },
+    "collection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fetchedAt", "projectCount", "issueCount", "advisoryCount"],
+      "properties": {
+        "fetchedAt": { "type": "string", "format": "date-time" },
+        "projectCount": { "type": "integer", "minimum": 0 },
+        "issueCount": { "type": "integer", "minimum": 0 },
+        "advisoryCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "issues": {
+      "type": "array",
+      "description": "Canonical project-scoped issue instances for context, traceability, and downstream resolver handoffs. ledger.py init validates this array but does not materialize advisories from it.",
+      "items": { "$ref": "#/$defs/issue" }
+    },
+    "advisories": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/advisory" }
+    }
+  },
+  "$defs": {
+    "severity": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low"]
+    },
+    "issueType": {
+      "type": "string",
+      "enum": ["package_vulnerability", "code"]
+    },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "advisoryKey",
+        "restIssueId",
+        "issueKey",
+        "title",
+        "issueType",
+        "severity",
+        "riskScore",
+        "createdAt",
+        "projectId",
+        "projectName"
+      ],
+      "properties": {
+        "advisoryKey": { "type": "string", "minLength": 1 },
+        "restIssueId": { "type": "string", "minLength": 1 },
+        "issueKey": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "issueType": { "$ref": "#/$defs/issueType" },
+        "severity": { "$ref": "#/$defs/severity" },
+        "riskScore": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "projectId": { "type": "string", "minLength": 1 },
+        "projectName": { "type": "string", "minLength": 1 },
+        "workspacePackage": { "type": "string", "minLength": 1 },
+        "purl": { "type": "string", "minLength": 1 },
+        "packageName": { "type": "string", "minLength": 1 },
+        "filePath": { "type": "string", "minLength": 1 },
+        "startLine": { "type": "integer", "minimum": 1 },
+        "endLine": { "type": "integer", "minimum": 1 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "issueType": { "const": "package_vulnerability" } },
+            "required": ["issueType"]
+          },
+          "then": {
+            "required": ["purl", "packageName"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "issueType": { "const": "code" } },
+            "required": ["issueType"]
+          },
+          "then": {
+            "required": ["filePath", "startLine", "endLine"]
+          }
+        }
+      ]
+    },
+    "advisory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "advisoryKey",
+        "title",
+        "severity",
+        "issueType",
+        "issueCount",
+        "affectedProjectCount",
+        "affectedProjectIds",
+        "affectedWorkspacePackages",
+        "createdAt",
+        "riskScoreMax"
+      ],
+      "properties": {
+        "advisoryKey": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "severity": { "$ref": "#/$defs/severity" },
+        "issueType": { "$ref": "#/$defs/issueType" },
+        "issueCount": { "type": "integer", "minimum": 1 },
+        "affectedProjectCount": { "type": "integer", "minimum": 1 },
+        "affectedProjectIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "affectedWorkspacePackages": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "packageName": { "type": "string", "minLength": 1 },
+        "riskScoreMax": { "type": "number" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "issueType": { "const": "package_vulnerability" } },
+            "required": ["issueType"]
+          },
+          "then": {
+            "required": ["packageName"]
+          }
+        }
+      ]
+    }
+  }
+}

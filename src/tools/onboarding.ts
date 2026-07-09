@@ -47,6 +47,14 @@ export function registerOnboardingTool(server: McpServer) {
           },
           {
             step: 3,
+            tool: 'snyk_get_target_ledger_seed',
+            input: 'orgId, targetId',
+            output:
+              'issues-ledger seed with flat issues[] and grouped advisories[]',
+            note: 'Canonical target-scoped intake for session-init and remediation loops. Contract is fixed to open package_vulnerability + code issues.',
+          },
+          {
+            step: 4,
             tool: 'snyk_get_projects',
             input: 'orgId, optional targetId',
             output:
@@ -54,12 +62,20 @@ export function registerOnboardingTool(server: McpServer) {
             note: 'A target can have multiple projects (e.g. each package.json is a separate pnpm project). Use the returned project id as projectId in later calls.',
           },
           {
-            step: 4,
+            step: 5,
+            tool: 'snyk_get_project_ledger_seed',
+            input: 'orgId, projectId',
+            output:
+              'issues-ledger seed with flat issues[] and grouped advisories[] for one project',
+            note: 'Canonical project-scoped intake for session-init when you want to remediate exactly one project instead of all projects under a target.',
+          },
+          {
+            step: 6,
             tool: 'snyk_get_project_issues',
             input: 'orgId, projectId, optional severity/status/issueType/limit',
             output:
               'issues list with restIssueId, issueKey, title, risk score, and status',
-            note: "Use severity='critical' and status='open' to find the most urgent issues. projectId must be the Snyk project UUID returned by snyk_get_projects.",
+            note: "Use issueType='package_vulnerability' or issueType='code' plus severity='critical' and status='open' to focus the result set. projectId must be the Snyk project UUID returned by snyk_get_projects.",
           },
         ],
         additionalTools: [
@@ -79,9 +95,9 @@ export function registerOnboardingTool(server: McpServer) {
               'Look up direct package vulnerabilities by exact PURL (e.g. pkg:npm/axios@1.7.0) and receive vulnerabilityId values.',
           },
           {
-            tool: 'snyk_get_project_issue_analysis',
+            tool: 'snyk_get_project_package_vulnerability_analysis',
             description:
-              'Get combined project issue analysis for an exact REST issue UUID and exact package PURL.',
+              'Get package_vulnerability-specific project analysis for an exact REST issue UUID and exact package PURL.',
           },
           {
             tool: 'snyk_get_project_issue_paths',
@@ -93,7 +109,9 @@ export function registerOnboardingTool(server: McpServer) {
           'Always resolve the org ID first — most tools require it.',
           'When a tool asks for orgId or projectId, pass the Snyk UUID returned by earlier tools, not a display name.',
           'Strict input contracts apply: pass exact slugs, exact restIssueId UUIDs, exact PURLs, and treat issueKey as an internal bridge identifier rather than a user-facing primary ID.',
+          "Use canonical Snyk issueType values in public contracts: 'package_vulnerability' and 'code'.",
           'Discovery, listing, and issue-detail flows use the Snyk REST API; dependency-path analysis resolves the REST issue UUID to a legacy V1 issue key internally.',
+          'For session initialization, choose the seed scope explicitly: target-wide via snyk_get_target_ledger_seed or single-project via snyk_get_project_ledger_seed.',
           "Filter issues by severity+status to reduce noise (e.g. severity='critical', status='open').",
           "The same vulnerability (same Snyk key) may appear in multiple projects — that's expected.",
           'Use snyk_get_projects with targetId to efficiently list all projects for one repo.',

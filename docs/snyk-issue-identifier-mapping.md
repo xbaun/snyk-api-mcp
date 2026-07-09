@@ -140,14 +140,14 @@ Diese Flows sollten mit `restIssueId` arbeiten:
 - `snyk_list_org_issues`
 - `snyk_get_issue_detail`
 - `snyk_get_project_issue_paths`
-- `snyk_get_project_issue_analysis`
+- `snyk_get_project_package_vulnerability_analysis`
 
 ### Tools mit Vulnerability IDs
 
 Diese Flows liefern eher `vulnerabilityId`-artige IDs:
 
 - `snyk_get_package_issue_description`
-- package-bezogene Teile in `snyk_get_project_issue_analysis`
+- package-bezogene Teile in `snyk_get_project_package_vulnerability_analysis`
 
 ### Tools/Flows mit Issue Key
 
@@ -155,7 +155,7 @@ Diese Flows benötigen `issueKey` als Brücke:
 
 - `resolveIssueKeyFromRestId(...)`
 - `snyk_get_project_issue_paths`
-- `snyk_get_project_issue_analysis`
+- `snyk_get_project_package_vulnerability_analysis`
 
 ## Aktuelle Contract-Schwäche
 

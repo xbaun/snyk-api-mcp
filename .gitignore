@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 build/
+.reports/
 
 # IDE
 .vscode/
@@ -23,3 +24,8 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class

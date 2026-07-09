@@ -1,0 +1,41 @@
+{
+  "$schema": "../schemas/snyk-dep-overrides.schema.json",
+  "schemaVersion": 1,
+  "manager": "{{manager}}",
+  "generatedAt": "2026-07-08T00:00:00Z",
+  "cases": [
+    {
+      "key": "example-security-override",
+      "status": "active",
+      "reason": "security",
+      "selector": "example-package@<1.2.3",
+      "target": "^1.2.3",
+      "package": "example-package",
+      "scope": "workspace-root",
+      "contextSummary": "Example override entry for a temporary security remediation.",
+      "snykIds": ["SNYK-EXAMPLE-000001"],
+      "introducedBy": "2026-07-08T000000-remediation",
+      "createdAt": "2026-07-08T00:00:00Z",
+      "updatedAt": "2026-07-08T00:00:00Z",
+      "evidenceTree": [
+        {
+          "importer": "catalog",
+          "directDependency": "example-parent@1.0.0",
+          "chain": ["example-parent@1.0.0", "example-package@1.0.0"]
+        }
+      ],
+      "watch": [
+        {
+          "package": "example-parent",
+          "declaredIn": "catalog",
+          "declaredVersion": "1.0.0",
+          "relevance": "Direct lever for reevaluating the temporary override."
+        }
+      ],
+      "obsoleteWhen": [
+        "All watched packages resolve example-package >=1.2.3 natively",
+        "Removing selector does not reintroduce the vulnerable package version"
+      ]
+    }
+  ]
+}

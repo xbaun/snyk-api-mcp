@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xbaun.local/snyk-orchestration/issues-ledger.schema.json",
+  "title": "issues-ledger",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["sessionId", "advisories"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "sessionId": { "type": "string", "minLength": 1 },
+    "advisories": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/advisory" }
+    }
+  },
+  "$defs": {
+    "severity": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low"]
+    },
+    "issueType": {
+      "type": "string",
+      "enum": ["package_vulnerability", "code"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["not-started", "in-progress", "resolved", "blocked", "partially-resolved"]
+    },
+    "verificationState": {
+      "type": "string",
+      "enum": ["pass", "fail", "not-run"]
+    },
+    "implementation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "filesChanged": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "dependencyUpdates": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "parentUpdates": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "overridesApplied": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "commandsRun": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "how": { "type": "string", "minLength": 1 },
+        "why": { "type": "string", "minLength": 1 }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "dependencyCheck": { "type": "string", "enum": ["pass", "fail"] },
+        "lint": { "$ref": "#/$defs/verificationState" },
+        "typecheck": { "$ref": "#/$defs/verificationState" },
+        "tests": { "$ref": "#/$defs/verificationState" },
+        "build": { "$ref": "#/$defs/verificationState" }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "result": { "type": "string", "enum": ["resolved", "blocked", "partially-resolved"] },
+        "summary": { "type": "string", "minLength": 1 },
+        "blockers": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "remediationProposal": { "type": "string", "minLength": 1 },
+        "rationale": { "type": "string", "minLength": 1 }
+      },
+      "required": ["summary"]
+    },
+    "advisory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "advisoryKey",
+        "title",
+        "severity",
+        "issueType",
+        "riskScoreMax",
+        "issueCount",
+        "affectedProjectCount",
+        "affectedProjectIds",
+        "affectedWorkspacePackages",
+        "createdAt",
+        "status"
+      ],
+      "properties": {
+        "advisoryKey": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "severity": { "$ref": "#/$defs/severity" },
+        "issueType": { "$ref": "#/$defs/issueType" },
+        "riskScoreMax": { "type": "number" },
+        "issueCount": { "type": "integer", "minimum": 1 },
+        "affectedProjectCount": { "type": "integer", "minimum": 1 },
+        "affectedProjectIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "affectedWorkspacePackages": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "packageName": { "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/$defs/status" },
+        "attemptCount": { "type": "integer", "minimum": 0 },
+        "handbackRetryCount": { "type": "integer", "minimum": 0 },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "lastAttemptAt": { "type": "string", "format": "date-time" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "lastFailureKind": {
+          "type": "string",
+          "enum": [
+            "handback-parse",
+            "handback-format",
+            "override-validation",
+            "code-health-validation",
+            "resolver-error",
+            "dirty-stop",
+            "other"
+          ]
+        },
+        "lastFailureAt": { "type": "string", "format": "date-time" },
+        "lastFailureMessage": { "type": "string", "minLength": 1 },
+        "lastActor": {
+          "type": "string",
+          "enum": ["snyk-orchestration", "snyk-resolve-dep", "snyk-resolve-code"]
+        },
+        "depOrigin": { "type": "string", "enum": ["direct", "transitive", "mixed"] },
+        "vulnerablePackage": { "type": "string", "minLength": 1 },
+        "vulnerableVersions": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "targetVersion": { "type": "string", "minLength": 1 },
+        "strategy": {
+          "type": "string",
+          "enum": ["update-direct", "update-parent", "consolidated-shared-upgrade", "temp-override"]
+        },
+        "riskLevel": { "type": "string", "enum": ["low", "medium", "high"] },
+        "complexity": {
+          "type": "string",
+          "enum": ["trivial", "contained", "architectural", "false-positive"]
+        },
+        "filePath": { "type": "string", "minLength": 1 },
+        "lineRange": { "type": "string", "minLength": 1 },
+        "cweId": { "type": "string", "minLength": 1 },
+        "implementation": { "$ref": "#/$defs/implementation" },
+        "verification": { "$ref": "#/$defs/verification" },
+        "outcome": { "$ref": "#/$defs/outcome" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "issueType": { "const": "package_vulnerability" } },
+            "required": ["issueType"]
+          },
+          "then": {
+            "properties": {
+              "packageName": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -69,7 +69,6 @@ export type IssueRemedySummary = {
 export type IssueRiskSummary = {
   score?: number;
   model?: string;
-  factors?: unknown;
   exploitMaturityLevels?: Array<{ format: string; level: string }>;
 };
 
@@ -88,7 +87,7 @@ type IssueSummaryBase = {
   issueKey?: string;
   title?: string;
   description?: string;
-  type?: string;
+  issueType?: string;
   effectiveSeverityLevel?: string;
   status?: string;
   ignored?: boolean;

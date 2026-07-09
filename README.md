@@ -15,12 +15,14 @@ If you are integrating this into a client, start with `snyk_onboarding`.
 | `snyk_resolve_org_id` | Resolve an exact Snyk org slug to an org UUID |
 | `snyk_get_targets` | List targets for an org, optionally filtered by display name |
 | `snyk_get_projects` | List projects for an org or target |
+| `snyk_get_target_ledger_seed` | Build the canonical target-scoped remediation seed with `issues[]` and `advisories[]` |
+| `snyk_get_project_ledger_seed` | Build the canonical project-scoped remediation seed with `issues[]` and `advisories[]` |
 | `snyk_get_project_issues` | List project issues with optional type, severity, and status filters |
 | `snyk_list_org_issues` | List issues across an org with explicit API filters |
 | `snyk_get_issue_detail` | Fetch a single REST issue resource by `restIssueId` |
 | `snyk_get_package_issue_description` | List direct package vulnerabilities for an exact PURL |
 | `snyk_get_project_issue_paths` | Resolve dependency paths for one project issue |
-| `snyk_get_project_issue_analysis` | Compose a project-focused OSS issue analysis from REST issue data, V1 paths, and package vulnerability data |
+| `snyk_get_project_package_vulnerability_analysis` | Compose a package_vulnerability-focused project analysis from REST issue data, V1 paths, and package vulnerability data |
 
 ## Identifier model
 
@@ -41,17 +43,23 @@ Do **not** treat `restIssueId`, `vulnerabilityId`, and `issueKey` as interchange
 ```text
 snyk_resolve_org_id
   → snyk_get_targets
+  → snyk_get_target_ledger_seed
+or
+  → snyk_get_projects
+  → snyk_get_project_ledger_seed
+or
   → snyk_get_projects
   → snyk_get_project_issues
-  → snyk_get_issue_detail / snyk_get_project_issue_paths / snyk_get_project_issue_analysis
+  → snyk_get_issue_detail / snyk_get_project_issue_paths / snyk_get_project_package_vulnerability_analysis
 ```
 
 In practice:
 
 1. Resolve the org UUID from the exact org slug.
-2. Discover the target and then the relevant project UUID.
-3. List project issues to obtain a `restIssueId`.
-4. Use that `restIssueId` for detail lookups or dependency-path analysis.
+2. Choose whether you want a target-scoped remediation seed or a single-project remediation seed.
+3. Discover the target and/or the relevant project UUID.
+4. Use a ledger seed tool for session initialization, or list project issues to obtain a `restIssueId`.
+5. Use that `restIssueId` for detail lookups or dependency-path analysis.
 
 ## Prerequisites
 
@@ -166,17 +174,36 @@ Agent: snyk_resolve_org_id(orgSlug: "my-snyk-org")
 Agent: snyk_get_targets(orgId: "d85409c5-...", displayName: "my-org/my-repo")
 → { targets: [{ id: "16dd3840-..." }] }
 
+Agent: snyk_get_target_ledger_seed(
+  orgId: "d85409c5-...",
+  targetId: "16dd3840-..."
+)
+→ target-scoped issues-ledger seed with issues[] and advisories[]
+
 Agent: snyk_get_projects(orgId: "d85409c5-...", targetId: "16dd3840-...")
 → { projects: [{ id: "1454..." }] }
 
 Agent: snyk_get_project_issues(
   orgId: "d85409c5-...",
   projectId: "1454...",
-  issueType: "package",
+  issueType: "package_vulnerability",
   severity: "critical",
   status: "open"
 )
 → issues with restIssueId, issueKey, severity, risk, and status
+
+### Build a project-scoped remediation seed
+
+```text
+Agent: snyk_get_projects(orgId: "d85409c5-...", targetId: "16dd3840-...")
+→ { projects: [{ id: "1454...", type: "pnpm" }] }
+
+Agent: snyk_get_project_ledger_seed(
+  orgId: "d85409c5-...",
+  projectId: "1454..."
+)
+→ project-scoped issues-ledger seed with issues[] and advisories[]
+```
 ```
 
 ### Fetch full detail for one issue
@@ -210,10 +237,10 @@ Agent: snyk_get_project_issue_paths(
 → issueKey bridge + V1 dependency paths
 ```
 
-### Compose a project issue analysis
+### Compose a package vulnerability analysis
 
 ```text
-Agent: snyk_get_project_issue_analysis(
+Agent: snyk_get_project_package_vulnerability_analysis(
   orgId: "d85409c5-...",
   projectId: "1454...",
   restIssueId: "a0f3809c-2c52-4d8f-8894-2f0c4a834f83",

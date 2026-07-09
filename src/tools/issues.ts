@@ -137,7 +137,7 @@ function summarizeRestIssueBase(attributes: RestIssueAttributes) {
     issueKey: attributes.key,
     title: attributes.title,
     description: attributes.description,
-    type: attributes.type,
+    issueType: attributes.type,
     effectiveSeverityLevel: attributes.effective_severity_level,
     status: attributes.status,
     ignored: attributes.ignored,
@@ -157,7 +157,6 @@ function summarizeRestIssueBase(attributes: RestIssueAttributes) {
     risk: {
       score: attributes.risk?.score?.value,
       model: attributes.risk?.score?.model,
-      factors: attributes.risk?.factors,
       exploitMaturityLevels: attributes.exploit_details?.maturity_levels,
     },
     resolution: attributes.resolution,
@@ -168,7 +167,7 @@ function summarizePackageIssueBase(attributes: PackageIssueAttributes) {
   return {
     title: attributes.title,
     description: attributes.description,
-    type: attributes.type,
+    issueType: attributes.type,
     effectiveSeverityLevel: attributes.effective_severity_level,
     createdAt: attributes.created_at,
     updatedAt: attributes.updated_at,
@@ -205,14 +204,17 @@ export function summarizePackageVulnerability(
   };
 }
 
-type IssueTypeInput = 'code' | 'package' | 'all';
+type IssueTypeInput = 'code' | 'package_vulnerability' | 'all';
 type IssueStatusInput = 'open' | 'resolved' | 'ignored';
 type IssueSeverityInput = 'low' | 'medium' | 'high' | 'critical';
 type ListIssuesQuery = operations['listOrgIssues']['parameters']['query'];
 
 function mapIssueTypeToRest(issueType: IssueTypeInput) {
   if (issueType === 'code') return 'code';
-  if (issueType === 'package') return 'package_vulnerability';
+  if (issueType === 'package_vulnerability') {
+    return 'package_vulnerability';
+  }
+
   return undefined;
 }
 
@@ -303,6 +305,14 @@ export async function resolveIssueKeyFromRestId(
 // ---------------------------------------------------------------------------
 
 export function registerIssueTools(server: McpServer) {
+  const issueTypeInputSchema = z
+    .enum(['code', 'package_vulnerability', 'all'])
+    .optional()
+    .default('all')
+    .describe(
+      "Filter by issue type: 'package_vulnerability' (canonical Snyk OSS type), 'code', or 'all'.",
+    );
+
   // -----------------------------------------------------------------------
   // snyk_get_project_issues
   // -----------------------------------------------------------------------
@@ -312,7 +322,7 @@ export function registerIssueTools(server: McpServer) {
     {
       description:
         'List all Snyk issues for a specific project (by project ID). ' +
-        "Supports filtering by type ('code' or 'package'), severity, and status. " +
+        "Supports filtering by type ('code' or 'package_vulnerability'), severity, and status. " +
         'Use snyk_get_targets and snyk_get_projects first to find the project ID for a given repository.',
       inputSchema: {
         orgId: z
@@ -325,13 +335,7 @@ export function registerIssueTools(server: McpServer) {
           .describe(
             'Snyk project ID (UUID). Use snyk_get_targets to discover project IDs for a target.',
           ),
-        issueType: z
-          .enum(['code', 'package', 'all'])
-          .optional()
-          .default('all')
-          .describe(
-            "Filter by issue type: 'code' (Snyk Code), 'package' (open source), or 'all'.",
-          ),
+        issueType: issueTypeInputSchema,
         severity: z
           .enum(['low', 'medium', 'high', 'critical'])
           .optional()
@@ -400,7 +404,7 @@ export function registerIssueTools(server: McpServer) {
     'snyk_list_org_issues',
     {
       description:
-        "List issues for a Snyk organization. Supports filtering by type ('code' or 'package'), " +
+        "List issues for a Snyk organization. Supports filtering by type ('code' or 'package_vulnerability'), " +
         'severity, and status.',
       inputSchema: {
         orgId: z
@@ -408,13 +412,7 @@ export function registerIssueTools(server: McpServer) {
           .describe(
             'Snyk organization UUID. Use snyk_resolve_org_id first if you only have a slug.',
           ),
-        issueType: z
-          .enum(['code', 'package', 'all'])
-          .optional()
-          .default('all')
-          .describe(
-            "Filter by issue type: 'code' (Snyk Code), 'package' (open source), or 'all'.",
-          ),
+        issueType: issueTypeInputSchema,
         severity: z
           .enum(['low', 'medium', 'high', 'critical'])
           .optional()

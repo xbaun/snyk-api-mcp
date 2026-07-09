@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xbaun.local/snyk-dep-overrides/snyk-dep-overrides.schema.json",
+  "title": "snyk-dep-overrides",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "manager", "cases"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "manager": { "type": "string", "minLength": 1 },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "cases": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/case" }
+    }
+  },
+  "definitions": {
+    "status": {
+      "type": "string",
+      "enum": ["active", "draft", "obsolete", "removed"]
+    },
+    "reason": {
+      "type": "string",
+      "enum": ["security", "compatibility", "performance", "other"]
+    },
+    "evidenceNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["importer", "directDependency", "chain"],
+      "properties": {
+        "importer": { "type": "string", "minLength": 1 },
+        "directDependency": { "type": "string", "minLength": 1 },
+        "chain": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "watchEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package", "declaredIn", "declaredVersion", "relevance"],
+      "properties": {
+        "package": { "type": "string", "minLength": 1 },
+        "declaredIn": { "type": "string", "minLength": 1 },
+        "declaredVersion": { "type": "string", "minLength": 1 },
+        "relevance": { "type": "string", "minLength": 1 }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "status",
+        "reason",
+        "selector",
+        "target",
+        "package",
+        "snykIds",
+        "introducedBy",
+        "evidenceTree",
+        "watch",
+        "obsoleteWhen"
+      ],
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "status": { "$ref": "#/definitions/status" },
+        "reason": { "$ref": "#/definitions/reason" },
+        "selector": { "type": "string", "minLength": 1 },
+        "target": { "type": "string", "minLength": 1 },
+        "package": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string", "minLength": 1 },
+        "contextSummary": { "type": "string", "minLength": 1 },
+        "snykIds": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "introducedBy": { "type": "string", "minLength": 1 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "evidenceTree": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/evidenceNode" }
+        },
+        "watch": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/watchEntry" }
+        },
+        "obsoleteWhen": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}
