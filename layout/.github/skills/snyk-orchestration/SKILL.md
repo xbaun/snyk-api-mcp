@@ -54,7 +54,7 @@ Wenn unklar ist, welches Flag oder welches Command zu verwenden ist, ist die ric
 	- Auswahl: `python3 .github/skills/snyk-orchestration/scripts/ledger.py select --ledger .synk/{sessionId}/issues-ledger.json --repo-root . --format json`
 	- Status-Überblick: `python3 .github/skills/snyk-orchestration/scripts/ledger.py analyze --ledger .synk/{sessionId}/issues-ledger.json --format json`
 	- Status setzen: `python3 .github/skills/snyk-orchestration/scripts/ledger.py set-status --ledger .synk/{sessionId}/issues-ledger.json --key <advisoryKey> --status in-progress`
-	- Handback schreiben: `python3 .github/skills/snyk-orchestration/scripts/ledger.py update ...`
+	- Handback schreiben: `python3 .github/skills/snyk-orchestration/scripts/ledger.py update --from-handback - ...` (stdin-first)
 	- Fehler persistieren: `python3 .github/skills/snyk-orchestration/scripts/ledger.py record-failure ...`
 	- Kaskaden prüfen: `python3 .github/skills/snyk-orchestration/scripts/ledger.py cascade-check ...`
 - AJV validiert den persistierten JSON-Contract; die fachliche Kontrollfluss- und Update-Logik bleibt normativ Aufgabe von `ledger.py`.
@@ -129,6 +129,7 @@ Andere `issueType`-Werte sind Contract-Verletzungen und kein gültiger Laufzeitf
 
 - `ledger.py` ist die operative Single Source of Truth für CLI-Bedienung; lies bei Unklarheit immer zuerst `ledger.py --help` und dann `ledger.py <command> --help`
 - Gate [O1] wird normativ über `python3 .github/skills/snyk-orchestration/scripts/ledger.py select --ledger .synk/{sessionId}/issues-ledger.json --repo-root . --format json` vorbereitet
+- Gate [O7] soll validierte Resolver-Handbacks primär per stdin an `ledger.py update --from-handback -` übergeben; Dateipfade sind nur Fallback für bereits persistierte JSON-Artefakte
 - Sortierung: `issueType` (`package_vulnerability` zuerst) → severity desc → `riskScoreMax` desc → `affectedProjectCount` desc → `issueCount` desc → `createdAt` asc → `advisoryKey` asc
 - `partially-resolved` wird wie `blocked` übersprungen
 - Kein direkter LLM-Edit oder manuelles Control-Flow-Parsing von `issues-ledger.json`

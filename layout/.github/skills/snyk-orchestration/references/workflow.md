@@ -34,7 +34,7 @@ Dieser Workflow ist normativ. `snyk-orchestration` soll nicht "frei improvisiere
    - Mindestkonsistenz der behaupteten Verifikationen prüfen
 
 8. **Gate [O7] — Ledger Update**
-   - `ledger.py update`
+   - `ledger.py update` mit stdin-first Handback-Übergabe (`--from-handback -`)
    - JSON-Integrität prüfen
 
 9. **Gate [O8] — Cascade Check**

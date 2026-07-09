@@ -4,6 +4,8 @@
 
 Dieses Harness beschreibt, wann und wie eine manager-spezifische Override-Materialisierung gepflegt werden darf.
 
+Im Gesamtfluss beschreibt dieses Harness nur die Override-Entscheidung und -Materialisierung. Das finale Resolver-Handback bleibt ein separates JSON-Objekt, das `snyk-orchestration` primär direkt per stdin an `ledger.py update --from-handback -` weiterreicht; dieses Harness setzt dafür kein temp Handback-File voraus.
+
 ## Entscheidungsregeln
 
 1. Ein Override ist nur zulässig, wenn eine reguläre Dependency-Änderung den Befund nicht innerhalb der YAGNI+KISS-Grenze behebt.

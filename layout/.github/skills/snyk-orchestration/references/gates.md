@@ -202,9 +202,10 @@ Das validierte Handback deterministisch in `issues-ledger.json` persistieren.
 
 ### Ablauf
 
-1. Rufe `ledger.py update --ledger ... --key ... --from-handback ...` auf.
-2. Prüfe danach JSON-Integrität des Ledgers.
-3. Schreibe keine Ledger-Felder direkt per LLM.
+1. Rufe `ledger.py update --ledger ... --key ... --from-handback -` auf und übergib das validierte Handback primär direkt per stdin.
+2. Verwende `--from-handback <path>` nur dann, wenn das Handback aus einem realen operativen Grund bereits als Datei vorliegt.
+3. Prüfe danach JSON-Integrität des Ledgers.
+4. Schreibe keine Ledger-Felder direkt per LLM.
 
 ### Pass-Kriterium
 

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from pathlib import Path
+import sys
 from typing import Any
 
 from .common import (
@@ -37,6 +39,20 @@ TOP_LEVEL_HANDBACK_FIELDS = [
     'severity',
 ]
 NESTED_HANDBACK_FIELDS = ['implementation', 'verification', 'outcome']
+
+
+def load_handback_input(from_handback: str) -> dict[str, Any]:
+    if from_handback == '-':
+        try:
+            handback = json.loads(sys.stdin.read())
+        except json.JSONDecodeError as exc:
+            raise LedgerError(f'Invalid JSON in stdin handback: {exc}') from exc
+    else:
+        handback = load_json(Path(from_handback))
+
+    if not isinstance(handback, dict):
+        raise LedgerError('Handback root must be an object.')
+    return handback
 
 
 def normalize_handback(handback: dict[str, Any], advisory_key: str) -> dict[str, Any]:
@@ -273,9 +289,7 @@ def cmd_update(args: Any) -> int:
     advisory = find_advisory(ledger, args.key)
 
     if args.from_handback:
-        handback = load_json(Path(args.from_handback))
-        if not isinstance(handback, dict):
-            raise LedgerError('Handback root must be an object.')
+        handback = load_handback_input(args.from_handback)
     else:
         handback = build_inline_handback(args)
 

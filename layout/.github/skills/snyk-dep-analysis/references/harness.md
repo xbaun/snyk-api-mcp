@@ -4,6 +4,8 @@
 
 Dieses Harness definiert die **einzige zulässige Leseschnittstelle** für kompakte Dependency-Fakten im Resolver-Kontext.
 
+Im Gesamtfluss liefert dieses Harness nur Faktensammlung und Verifikation. Das finale Resolver-Handback bleibt ein separates JSON-Objekt, das `snyk-orchestration` primär direkt per stdin an `ledger.py update --from-handback -` weiterreicht; dieses Harness setzt dafür kein temp Handback-File voraus.
+
 ## Adapter-Modell
 
 - `dep.py` besitzt eine kleine Registry aus Manager-Adaptern.

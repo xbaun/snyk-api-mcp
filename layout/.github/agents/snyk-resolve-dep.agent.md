@@ -231,6 +231,7 @@ Apply this gate after strategy selection and before execution.
 - Use only the `package_vulnerability` contract from that file.
 - Do not add undocumented top-level fields.
 - Do not emit `null`.
+- The orchestrator is expected to consume this JSON directly via stdin for `ledger.py update --from-handback -`; do not wrap it in markdown or require a temp handback file.
 
 ## Agent-Specific Output Notes
 

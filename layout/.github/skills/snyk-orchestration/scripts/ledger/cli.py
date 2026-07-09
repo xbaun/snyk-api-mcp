@@ -322,18 +322,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     update_parser = subparsers.add_parser(
         'update',
-        usage='ledger.py update --ledger PATH --key KEY (--from-handback PATH | inline flags...)',
-        help='Persist one advisory result from a handback file or deterministic inline flags.',
+        usage='ledger.py update --ledger PATH --key KEY (--from-handback - | --from-handback PATH | inline flags...)',
+        help='Persist one advisory result from a handback JSON stream, file, or deterministic inline flags.',
         description=dedent(
             """
             Patch a single advisory in `issues-ledger.json`.
 
             Preferred mode:
-              pass `--from-handback` with a validated resolver handback JSON object.
+              pass `--from-handback -`
+              and stream a validated resolver handback JSON object via stdin.
 
             Secondary mode:
-              provide inline flags for deterministic testing, debugging, or narrowly scoped
-              manual repair. Inline flags still need to obey the handback contract semantics.
+              pass `--from-handback PATH`
+              when a validated resolver handback JSON object already exists on disk.
+
+            Fallback mode:
+              provide inline flags for deterministic testing, debugging,
+              or narrowly scoped manual repair.
+              Inline flags still need to obey the handback contract semantics.
 
             `update` writes final result fields like `status`, `implementation`, `verification`,
             and `outcome`, and stamps `completedAt` for non-`in-progress` states.
@@ -342,6 +348,12 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=dedent(
             """
             Examples:
+              cat .synk/{sessionId}/handback.json |
+                python3 .github/skills/snyk-orchestration/scripts/ledger.py update \
+                  --ledger .synk/{sessionId}/issues-ledger.json \
+                  --key SNYK-JS-FOO-123 \
+                  --from-handback -
+
               python3 .github/skills/snyk-orchestration/scripts/ledger.py update \
                 --ledger .synk/{sessionId}/issues-ledger.json \
                 --key SNYK-JS-FOO-123 \
@@ -380,7 +392,7 @@ def build_parser() -> argparse.ArgumentParser:
     update_parser.add_argument(
         '--from-handback',
         metavar='PATH',
-        help='Path to a resolver handback JSON object. Preferred over inline flags.',
+        help='Resolver handback JSON source. Use `-` to read from stdin; pass a path only when the handback already exists on disk.',
     )
     update_parser.add_argument('--issue-type', help='Handback field `issueType`.')
     update_parser.add_argument('--status', help='Handback field `status`. Required for inline mode.')

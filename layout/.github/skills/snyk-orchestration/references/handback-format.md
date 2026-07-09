@@ -19,6 +19,7 @@ Dieses Dokument ist die **Single Source of Truth** für das Handback-Protokoll.
 - Kein Prosa-Vor- oder Nachspann.
 - Keine `null`-Werte; unbekannte Felder bleiben absent.
 - `issueType` muss exakt zum Handoff passen.
+- Das Objekt soll direkt als stdin-Payload für `ledger.py update --from-handback -` weiterverwendbar sein; ein temp Handback-File ist kein erforderlicher Teil des Protokolls.
 
 ## Semantik-Grundregeln
 
