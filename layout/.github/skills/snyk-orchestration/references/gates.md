@@ -31,8 +31,8 @@ Deterministisch genau **ein** Advisory auswählen oder den Run sauber beenden.
 
 ### Persistente Laufzeitmetadaten
 
-- `set-status --key <advisoryKey> --status in-progress` erhöht `attemptCount` deterministisch und setzt `lastAttemptAt`.
-- Resume-/Retry-relevante Fehler werden zusätzlich über `ledger.py record-failure` persistiert.
+- `set-status --key <advisoryKey> --status in-progress` setzt `lastAttemptAt`.
+- Resume-relevante Fehler werden zusätzlich über `ledger.py record-failure` persistiert.
 
 ### Pass-Kriterium
 
@@ -134,9 +134,9 @@ Die Rückgabe des Resolvers streng prüfen, bevor etwas ins Ledger geschrieben w
    - Dep `resolved`/`partially-resolved` benötigt `verification.dependencyCheck`
    - wenn `verification` Felder behauptet werden, müssen sie echte Resultate sein
 6. Wenn Parsing/Format fehlschlägt:
-   - persistiere den Fehler via `ledger.py record-failure --kind handback-parse|handback-format --consume-handback-retry --actor snyk-orchestration`
-   - genau **ein** Retry mit präziser Fehlermeldung
-   - zweiter Fehlschlag → Advisory als `blocked` behandeln
+   - persistiere den Fehler via `ledger.py record-failure --kind handback-parse|handback-format`
+   - liefere eine präzise Fehlermeldung
+   - behandle das Advisory anschließend als `blocked`
 
 ### Pass-Kriterium
 
@@ -257,7 +257,7 @@ Ownership, Schreibpflicht und Promotion der GOTCHAS-Dateien deterministisch durc
 ### Ablauf
 
 1. Prüfe, ob Resolver gemäß Policy einen Session-GOTCHA-Eintrag hätte schreiben müssen.
-2. Wenn ein Loop-/Resume-/Retry-/Cascade-Thema aufgetreten ist, schreibe selbst einen Session-GOTCHA-Eintrag.
+2. Wenn ein Loop-/Resume-/Failure-/Cascade-Thema aufgetreten ist, schreibe selbst einen Session-GOTCHA-Eintrag.
 3. Prüfe neue Session-Einträge auf Promotionswürdigkeit.
 4. Promote nur dauerhafte, repo-spezifische, wiederverwendbare Regeln nach `.snyk/GOTCHAS.md`.
 5. Dedupliziere oder aktualisiere bestehende permanente Regeln statt sie blind zu duplizieren.

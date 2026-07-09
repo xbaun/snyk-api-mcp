@@ -21,7 +21,7 @@ Diese Policy regelt **verbindlich**, wer `.snyk/GOTCHAS.md` und `.synk/{sessionI
 - Schreibrecht:
   - `snyk-resolve-dep` → advisory-spezifische Dependency-Learnings
   - `snyk-resolve-code` → advisory-spezifische Code-/False-Positive-Learnings
-  - `snyk-orchestration` → Loop-/Resume-/Retry-/Cascade-Learnings
+  - `snyk-orchestration` → Loop-/Resume-/Failure-/Cascade-Learnings
 
 ## Schreibpflichten
 
@@ -53,7 +53,7 @@ Muss **vor Rückgabe des finalen Handbacks** einen Eintrag in `.synk/{sessionId}
 
 Muss:
 
-1. bei Dirty-Resume-Fällen, Handback-Retrys oder Cascade-Auffälligkeiten selbst einen Session-GOTCHA-Eintrag schreiben
+1. bei Dirty-Resume-Fällen, Failure-Auffälligkeiten oder Cascade-Auffälligkeiten selbst einen Session-GOTCHA-Eintrag schreiben
 2. nach jedem **validierten** Advisory-Durchlauf die neuen Session-GOTCHAS prüfen
 3. dauerhafte, wiederverwendbare Learnings in `.snyk/GOTCHAS.md` promoten
 4. Promotionen deduplizieren oder vorhandene Regeln aktualisieren statt blind zu duplizieren

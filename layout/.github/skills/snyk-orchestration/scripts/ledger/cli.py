@@ -37,7 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
               3. `analyze`        summarize progress, statuses, and blocked reasons
               4. `set-status`     persist `in-progress` before resolver dispatch
               5. `update`         persist a validated resolver handback
-              6. `record-failure` persist retry/resume relevant failure metadata
+              6. `record-failure` persist resume/failure relevant metadata
               7. `cascade-check`  inspect/apply package vulnerability cascades
 
             Important: `next` is a read-only inspection helper. Orchestrators should prefer
@@ -72,8 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
             Create a new session ledger from the canonical `issues-ledger-seed.json` document.
 
             `init` validates the seed contract, materializes advisories from `advisories[]`,
-            and initializes runtime fields like `status`, `attemptCount`, and
-            `handbackRetryCount`.
+            and initializes runtime fields like `status`.
 
             Use this during `snyk-session-init`. Do not use it to regroup local issue data.
             """
@@ -385,7 +384,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     update_parser.add_argument('--issue-type', help='Handback field `issueType`.')
     update_parser.add_argument('--status', help='Handback field `status`. Required for inline mode.')
-    update_parser.add_argument('--dep-origin', help='Handback field `depOrigin` for dependency advisories.')
     update_parser.add_argument('--package', help='Handback field `vulnerablePackage`.')
     update_parser.add_argument(
         '--vuln-versions',
@@ -420,13 +418,6 @@ def build_parser() -> argparse.ArgumentParser:
         metavar='JSON',
         help='JSON array for `implementation.overridesApplied`.',
     )
-    update_parser.add_argument(
-        '--commands',
-        metavar='JSON',
-        help='JSON array for `implementation.commandsRun`.',
-    )
-    update_parser.add_argument('--how', help='Handback field `implementation.how`.')
-    update_parser.add_argument('--why', help='Handback field `implementation.why`.')
     update_parser.add_argument(
         '--dep-check',
         choices=['pass', 'fail'],
@@ -468,7 +459,7 @@ def build_parser() -> argparse.ArgumentParser:
     failure_parser = subparsers.add_parser(
         'record-failure',
         usage='ledger.py record-failure --ledger PATH --key KEY --kind KIND [options]',
-        help='Persist retry/resume relevant failure metadata for one advisory.',
+        help='Persist resume/failure relevant metadata for one advisory.',
         description=dedent(
             """
             Persist operational failure metadata without inventing a new business outcome.
@@ -477,7 +468,7 @@ def build_parser() -> argparse.ArgumentParser:
             parse failures, validation failures, dirty stops, or resolver runtime problems.
 
             `record-failure` updates metadata like `lastFailureKind`, `lastFailureAt`,
-            `lastFailureMessage`, and optionally consumes the one allowed handback retry.
+            and `lastFailureMessage`.
             """
         ),
         epilog=dedent(
@@ -487,9 +478,7 @@ def build_parser() -> argparse.ArgumentParser:
                 --ledger .synk/{sessionId}/issues-ledger.json \
                 --key SNYK-JS-FOO-123 \
                 --kind handback-format \
-                --actor snyk-orchestration \
-                --message "Missing outcome.remediationProposal" \
-                --consume-handback-retry
+                --message "Missing outcome.remediationProposal"
             """
         ),
         formatter_class=HelpFormatter,
@@ -513,19 +502,6 @@ def build_parser() -> argparse.ArgumentParser:
         help='Failure kind, e.g. `handback-format`, `dirty-stop`, or `resolver-error`.',
     )
     failure_parser.add_argument('--message', help='Optional human-readable error detail to persist.')
-    failure_parser.add_argument('--actor', help='Actor responsible for the failure event.')
-    failure_parser.add_argument(
-        '--consume-handback-retry',
-        action='store_true',
-        help='Consume one allowed handback retry if the advisory still has retry budget.',
-    )
-    failure_parser.add_argument(
-        '--max-handback-retries',
-        type=int,
-        default=1,
-        metavar='N',
-        help='Maximum number of handback retries permitted for this advisory.',
-    )
     failure_parser.set_defaults(func=cmd_record_failure)
 
     status_parser = subparsers.add_parser(
@@ -534,7 +510,7 @@ def build_parser() -> argparse.ArgumentParser:
         help='Persist a status transition for one advisory.',
         description=dedent(
             """
-            Set the status of one advisory and maintain runtime timestamps/counters.
+            Set the status of one advisory and maintain runtime timestamps.
 
             Most orchestrator runs use this to mark an advisory as `in-progress` before
             resolver dispatch. Final advisory results should usually be written through

@@ -21,7 +21,6 @@ from ._shared import (
     build_candidate_levers,
     build_controllable_parents,
     collect_reachable_importers,
-    determine_dep_origin,
     record_list_evidence_path,
 )
 
@@ -95,11 +94,6 @@ class YarnAdapter(PackageManagerAdapter):
                 'could be reconstructed from yarn.lock.'
             )
 
-        dep_origin = determine_dep_origin(
-            context.package_name,
-            active_direct_declarations,
-            evidence_paths,
-        )
         candidate_levers = build_candidate_levers(
             context.package_name,
             package_present,
@@ -111,7 +105,6 @@ class YarnAdapter(PackageManagerAdapter):
             'manager': self.name,
             'packageName': context.package_name,
             'workspacePackage': context.workspace_package or 'unknown',
-            'depOrigin': dep_origin,
             'controllableParents': controllable_parents,
             'evidencePaths': evidence_paths,
             'candidateLevers': candidate_levers,

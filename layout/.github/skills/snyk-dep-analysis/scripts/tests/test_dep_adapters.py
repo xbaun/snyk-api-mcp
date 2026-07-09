@@ -166,7 +166,6 @@ class NpmAdapterFixtureTests(unittest.TestCase):
         result = NpmAdapter().trace(context, [manifest])
 
         self.assertEqual(result['manager'], 'npm')
-        self.assertEqual(result['depOrigin'], 'transitive')
         self.assertEqual(
             result['evidencePaths'][0],
             {
@@ -292,7 +291,6 @@ class YarnAdapterFixtureTests(unittest.TestCase):
         result = YarnAdapter().trace(context, [manifest])
 
         self.assertEqual(result['manager'], 'yarn')
-        self.assertEqual(result['depOrigin'], 'transitive')
         self.assertEqual(
             result['evidencePaths'][0],
             {

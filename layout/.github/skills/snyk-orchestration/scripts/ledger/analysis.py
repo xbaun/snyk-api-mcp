@@ -106,7 +106,6 @@ def blocked_detail(advisory: dict[str, Any]) -> dict[str, Any]:
             'lastFailureKind': advisory.get('lastFailureKind'),
             'lastFailureAt': advisory.get('lastFailureAt'),
             'lastFailureMessage': advisory.get('lastFailureMessage'),
-            'lastActor': advisory.get('lastActor'),
         }
     )
 

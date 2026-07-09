@@ -107,8 +107,6 @@ def normalize_seed_advisory(raw: dict[str, Any]) -> dict[str, Any]:
             f"Seed advisory '{raw['advisoryKey']}' requires packageName for issueType=package_vulnerability."
         )
     normalized['status'] = 'not-started'
-    normalized['attemptCount'] = 0
-    normalized['handbackRetryCount'] = 0
     return normalized
 
 

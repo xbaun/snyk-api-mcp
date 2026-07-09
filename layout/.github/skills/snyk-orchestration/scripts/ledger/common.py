@@ -22,7 +22,6 @@ ALLOWED_FAILURE_KIND = {
     'dirty-stop',
     'other',
 }
-ALLOWED_ACTOR = {'snyk-orchestration', 'snyk-resolve-dep', 'snyk-resolve-code'}
 ALLOWED_SEVERITY = set(SEVERITY_ORDER)
 ALLOWED_ISSUE_TYPE = set(ISSUE_TYPE_ORDER)
 SEED_TOP_LEVEL_REQUIRED = ['query', 'target', 'collection', 'issues', 'advisories']
@@ -155,11 +154,6 @@ def find_advisory(ledger: dict[str, Any], key: str) -> dict[str, Any]:
         if advisory.get('advisoryKey') == key:
             return advisory
     raise LedgerError(f"No advisory found for advisoryKey '{key}'.")
-
-
-def ensure_runtime_metadata(advisory: dict[str, Any]) -> None:
-    advisory.setdefault('attemptCount', 0)
-    advisory.setdefault('handbackRetryCount', 0)
 
 
 def require_object(value: Any, field_name: str) -> dict[str, Any]:

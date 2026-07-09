@@ -35,7 +35,7 @@ Praktische Leitlinie pro Loop:
 - Gate [O1] beginnt mit `ledger.py select --format json`
 - vor Resolver-Start folgt `ledger.py set-status --key <advisoryKey> --status in-progress`
 - nach validiertem Handback folgt `ledger.py update`
-- bei Retry-/Resume-/Parse-/Format-Problemen folgt `ledger.py record-failure`
+- bei Resume-/Parse-/Format-Problemen folgt `ledger.py record-failure`
 - nach erfolgreicher Dependency-Resolution folgt ggf. `ledger.py cascade-check`
 
 Wenn unklar ist, welches Flag oder welches Command zu verwenden ist, ist die richtige nächste Aktion **nicht** das Ledger manuell zu lesen, sondern die CLI-Hilfe von `ledger.py` bzw. `ledger.py <command> --help` zu lesen.
@@ -55,7 +55,7 @@ Wenn unklar ist, welches Flag oder welches Command zu verwenden ist, ist die ric
 	- Status-Überblick: `python3 .github/skills/snyk-orchestration/scripts/ledger.py analyze --ledger .synk/{sessionId}/issues-ledger.json --format json`
 	- Status setzen: `python3 .github/skills/snyk-orchestration/scripts/ledger.py set-status --ledger .synk/{sessionId}/issues-ledger.json --key <advisoryKey> --status in-progress`
 	- Handback schreiben: `python3 .github/skills/snyk-orchestration/scripts/ledger.py update ...`
-	- Retry/Fehler persistieren: `python3 .github/skills/snyk-orchestration/scripts/ledger.py record-failure ...`
+	- Fehler persistieren: `python3 .github/skills/snyk-orchestration/scripts/ledger.py record-failure ...`
 	- Kaskaden prüfen: `python3 .github/skills/snyk-orchestration/scripts/ledger.py cascade-check ...`
 - AJV validiert den persistierten JSON-Contract; die fachliche Kontrollfluss- und Update-Logik bleibt normativ Aufgabe von `ledger.py`.
 
@@ -77,7 +77,7 @@ Wenn eine Entscheidung nicht explizit in diesen Referenzen beschrieben ist, wird
 - `set-status --key <advisoryKey> --status in-progress` vor Sub-Agent-Start
 - Dispatch + Handoff nach `issueType`
 - Handback validieren
-- Retry-/Fehlerzustände via `ledger.py record-failure` persistieren
+- Failure-Zustände via `ledger.py record-failure` persistieren
 - `ledger.py update` aufrufen
 - package-vulnerability-Kaskaden über `ledger.py cascade-check` markieren
 - Session-GOTCHAS kuratieren und dauerhafte Learnings nach `.snyk/GOTCHAS.md` promoten
@@ -90,8 +90,8 @@ Wenn eine Entscheidung nicht explizit in diesen Referenzen beschrieben ist, wird
 - schreibe **nie** direkt in `issues-ledger.json`; nutze nur `ledger.py`
 - rekonstruiere Gate-[O1]-Entscheidungen **nie** durch manuelles Lesen oder zeilenweises Scannen von `issues-ledger.json`; nutze `ledger.py select --format json`
 - überspringe `blocked` und `partially-resolved` bei der nächsten Selektion
-- führe für Handback-Formatfehler genau einen Retry aus, danach `blocked`
-- persistiere verbrauchte Handback-Retries und Resume-Failures im Ledger
+- behandle Handback-Formatfehler nach persistiertem Fehlerzustand als `blocked`
+- persistiere Resume-/Failure-Zustände im Ledger
 - führe Cascade-Checks nur für `package_vulnerability` mit `status=resolved` aus
 
 ## Explizite Gates
@@ -152,7 +152,7 @@ Andere `issueType`-Werte sind Contract-Verletzungen und kein gültiger Laufzeitf
 1. Override-Materialisierung via `overrides.py validate` gegen `pnpm-workspace.yaml` prüfen
 2. Lockfile-Diff prüfen, wenn Dependency-Resolution behauptet wird
 3. JSON-Integrität des Ledgers nach jedem Update sicherstellen
-4. Retry-/Failure-Metadaten im Ledger konsistent halten
+4. Failure-Metadaten im Ledger konsistent halten
 5. GOTCHAS-Einträge nach validierten Advisories prüfen und ggf. promoten
 
 ## Nicht-Ziele

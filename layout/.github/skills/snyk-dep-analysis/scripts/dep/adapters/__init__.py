@@ -11,7 +11,6 @@ from ._shared import (
     collect_list_evidence_paths,
     collect_observed_versions,
     collect_reachable_importers,
-    determine_dep_origin,
     record_list_evidence_path,
     walk_list_tree,
 )
@@ -74,7 +73,6 @@ __all__ = [
     'collect_list_evidence_paths',
     'collect_observed_versions',
     'collect_reachable_importers',
-    'determine_dep_origin',
     'record_list_evidence_path',
     'resolve_adapter',
     'walk_list_tree',

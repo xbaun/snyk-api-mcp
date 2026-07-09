@@ -5,12 +5,10 @@ from pathlib import Path
 from typing import Any
 
 from .common import (
-    ALLOWED_ACTOR,
     ALLOWED_FAILURE_KIND,
     ALLOWED_STATUS,
     LedgerError,
     advisory_package,
-    ensure_runtime_metadata,
     find_advisory,
     git_status_lines,
     load_json,
@@ -27,7 +25,6 @@ from .common import (
 TOP_LEVEL_HANDBACK_FIELDS = [
     'issueType',
     'status',
-    'depOrigin',
     'vulnerablePackage',
     'vulnerableVersions',
     'targetVersion',
@@ -77,7 +74,6 @@ def build_inline_handback(args: Any) -> dict[str, Any]:
 
     optional_scalar_map = {
         'issueType': args.issue_type,
-        'depOrigin': args.dep_origin,
         'vulnerablePackage': args.package,
         'targetVersion': args.target_version,
         'strategy': args.strategy,
@@ -101,9 +97,6 @@ def build_inline_handback(args: Any) -> dict[str, Any]:
         'dependencyUpdates': parse_json_array(args.dep_updates, 'dep-updates'),
         'parentUpdates': parse_json_array(args.parent_updates, 'parent-updates'),
         'overridesApplied': parse_json_array(args.overrides, 'overrides'),
-        'commandsRun': parse_json_array(args.commands, 'commands'),
-        'how': args.how,
-        'why': args.why,
     }
     implementation = {key: value for key, value in implementation.items() if value not in (None, [], {})}
     if implementation:
@@ -135,7 +128,6 @@ def build_inline_handback(args: Any) -> dict[str, Any]:
 
 def apply_handback(advisory: dict[str, Any], handback: dict[str, Any]) -> None:
     handback = normalize_handback(handback, str(advisory.get('advisoryKey', '<unknown>')))
-    ensure_runtime_metadata(advisory)
 
     if 'status' not in handback:
         raise LedgerError("Handback must include 'status'.")
@@ -297,40 +289,20 @@ def cmd_record_failure(args: Any) -> int:
     ledger_path = Path(args.ledger)
     ledger = load_ledger(ledger_path)
     advisory = find_advisory(ledger, args.key)
-    ensure_runtime_metadata(advisory)
 
     if args.kind not in ALLOWED_FAILURE_KIND:
         raise LedgerError(f"Unsupported failure kind '{args.kind}'.")
-    if args.actor and args.actor not in ALLOWED_ACTOR:
-        raise LedgerError(f"Unsupported actor '{args.actor}'.")
-
-    retry_allowed = False
-    remaining_retries: int | None = None
-    if args.consume_handback_retry:
-        retry_allowed = int(advisory.get('handbackRetryCount', 0)) < args.max_handback_retries
-        remaining_retries = max(
-            0,
-            args.max_handback_retries - int(advisory.get('handbackRetryCount', 0)) - (1 if retry_allowed else 0),
-        )
-        if retry_allowed:
-            advisory['handbackRetryCount'] = int(advisory.get('handbackRetryCount', 0)) + 1
 
     advisory['lastFailureKind'] = args.kind
     advisory['lastFailureAt'] = now_iso()
     if args.message:
         advisory['lastFailureMessage'] = args.message
-    if args.actor:
-        advisory['lastActor'] = args.actor
 
     write_json(ledger_path, ledger)
     print_json(
         {
             'key': args.key,
             'status': advisory.get('status'),
-            'attemptCount': advisory.get('attemptCount', 0),
-            'handbackRetryCount': advisory.get('handbackRetryCount', 0),
-            'retryAllowed': retry_allowed if args.consume_handback_retry else None,
-            'remainingRetries': remaining_retries,
             'lastFailureKind': advisory.get('lastFailureKind'),
         }
     )
@@ -344,14 +316,11 @@ def cmd_set_status(args: Any) -> int:
     ledger_path = Path(args.ledger)
     ledger = load_ledger(ledger_path)
     advisory = find_advisory(ledger, args.key)
-    ensure_runtime_metadata(advisory)
     previous_status = advisory.get('status')
     advisory['status'] = args.status
 
     if args.status == 'in-progress':
         timestamp = now_iso()
-        if previous_status != 'in-progress':
-            advisory['attemptCount'] = int(advisory.get('attemptCount', 0)) + 1
         advisory['startedAt'] = timestamp
         advisory['lastAttemptAt'] = timestamp
         advisory.pop('completedAt', None)

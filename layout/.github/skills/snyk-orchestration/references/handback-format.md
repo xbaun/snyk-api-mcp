@@ -45,7 +45,6 @@ Dieses Dokument ist die **Single Source of Truth** für das Handback-Protokoll.
 {
   "issueType": "package_vulnerability",
   "status": "resolved | partially-resolved | blocked",
-  "depOrigin": "direct | transitive | mixed",
   "vulnerablePackage": "string",
   "vulnerableVersions": ["string"],
   "targetVersion": "string",
@@ -53,9 +52,7 @@ Dieses Dokument ist die **Single Source of Truth** für das Handback-Protokoll.
   "riskLevel": "low | medium | high",
   "complexity": "contained | architectural",
   "implementation": {
-    "filesChanged": ["string"],
-    "how": "string",
-    "why": "string"
+    "filesChanged": ["string"]
   },
   "verification": {
     "dependencyCheck": "pass | fail",
@@ -77,14 +74,9 @@ Optional, aber wenn vorhanden exakt so benennen:
 - `dependencyUpdates`
 - `parentUpdates`
 - `overridesApplied`
-- `commandsRun`
 
 ### Feldsemantik
 
-- `depOrigin`
-  - `direct` = das betroffene Paket ist direkt kontrollierbar deklariert
-  - `transitive` = das betroffene Paket kommt nur über andere Abhängigkeiten herein
-  - `mixed` = dieselbe Advisory-Arbeitseinheit enthält sowohl direkte als auch transitive Vorkommen
 - `vulnerablePackage` = kanonischer Name des tatsächlich betroffenen Pakets
 - `vulnerableVersions` = konkret beobachtete problematische Versionen
 - `targetVersion` = Zielversion oder Zielauflösung, auf die die Remediation hinarbeitet
@@ -131,9 +123,7 @@ Optional, aber wenn vorhanden exakt so benennen:
   "severity": "critical | high | medium | low",
   "complexity": "trivial | contained",
   "implementation": {
-    "filesChanged": ["string"],
-    "how": "string",
-    "why": "string"
+    "filesChanged": ["string"]
   },
   "verification": {
     "lint": "pass | fail",
@@ -168,9 +158,7 @@ Optional, aber wenn vorhanden exakt so benennen:
 
 ### Optionale Zusatzfelder in `implementation`
 
-Optional, aber wenn vorhanden exakt so benennen:
-
-- `commandsRun`
+Keine.
 
 ### Feldsemantik
 

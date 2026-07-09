@@ -45,7 +45,6 @@ Liefert Dependency-Pfade und kontrollierbare Hebel für Gates `[R3]`–`[R5]`.
 
 Pflichtsemantik:
 
-- `depOrigin` — `direct | transitive | mixed`
 - `controllableParents[]` — direkte Hebel in relevanten Manifests
 - `evidencePaths[]` — kompakte beobachtete Pfade vom Importer bis zum betroffenen Paket
 - `candidateLevers[]` — nur mögliche Strategierichtungen, keine finale Entscheidung

@@ -65,7 +65,7 @@ Use the handoff plus these files as your primary context:
    - `python3 .github/skills/snyk-dep-analysis/scripts/dep.py --help`
    - `python3 .github/skills/snyk-dep-analysis/scripts/dep.py <subcommand> --help`
 - Use `dep.py inspect` to build the compact fact set for Gate `[R2]`.
-- Use `dep.py trace` to classify `direct | transitive | mixed` and identify controllable parents for Gates `[R3]` and `[R4]`.
+- Use `dep.py trace` evidence to classify the dependency situation and identify controllable parents for Gates `[R3]` and `[R4]`.
 - Use `dep.py verify` as the normative dependency verification path for Gate `[R7]`.
 - Omit `--manager` by default and rely on auto-selection; pass `--manager` only when detection is ambiguous or the handoff/repo context requires it explicitly.
 - Prefer `packageName` from the handoff; if `packageName` is missing or `unknown`, use `purl` instead of inventing a name.
@@ -91,7 +91,6 @@ Use this sequence unless a narrower repo-specific reason requires a different `d
 Resolver rules for interpreting the sequence:
 
 - `inspect.packagePresent == false` means there is no active graph evidence for the package in the analyzed scope; do not claim a remediation from that alone if the handoff or project-specific analysis still indicates a live issue.
-- `trace.depOrigin` is the primary classification source for `direct | transitive | mixed`.
 - `trace.controllableParents[]` is the primary source for `update-parent` candidates.
 - `verify.dependencyCheck == pass` is the default proof required before claiming `resolved`.
 - If `dep.py` fails because a manager is recognized but unsupported, return `blocked` unless another allowed remediation path remains clearly within gate `[A]`.
@@ -252,7 +251,7 @@ Apply this gate after strategy selection and before execution.
 ## Quality Bar
 
 - Prefer absence over filler fields.
-- Keep `filesChanged`, `dependencyUpdates`, `parentUpdates`, `overridesApplied`, and `commandsRun` truthful and minimal.
+- Keep `filesChanged`, `dependencyUpdates`, `parentUpdates`, and `overridesApplied` truthful and minimal.
 - If you apply an override, mention it in `implementation.overridesApplied`.
 - If verification fails, do not claim `resolved`.
 - If only some project instances are remediated, return `partially-resolved` with explicit blockers.

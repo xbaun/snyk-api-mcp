@@ -308,31 +308,6 @@ def build_controllable_parents(
     return parents
 
 
-def determine_dep_origin(
-    package_name: str,
-    direct_declarations: list[dict[str, str]],
-    evidence_paths: list[dict[str, Any]],
-) -> str:
-    has_direct = bool(direct_declarations)
-    has_transitive = False
-
-    for path in evidence_paths:
-        direct_dependency = path.get('directDependency')
-        if not isinstance(direct_dependency, str) or not direct_dependency:
-            continue
-        direct_dependency_name, _direct_dependency_version = parse_package_ref(direct_dependency)
-        if direct_dependency_name == package_name:
-            has_direct = True
-        else:
-            has_transitive = True
-
-    if has_direct and has_transitive:
-        return 'mixed'
-    if has_direct:
-        return 'direct'
-    return 'transitive'
-
-
 def build_candidate_levers(
     package_name: str,
     package_present: bool,
@@ -357,7 +332,6 @@ __all__ = [
     'collect_list_evidence_paths',
     'collect_observed_versions',
     'collect_reachable_importers',
-    'determine_dep_origin',
     'record_list_evidence_path',
     'walk_list_tree',
 ]

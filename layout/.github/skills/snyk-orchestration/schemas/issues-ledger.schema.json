@@ -49,13 +49,7 @@
         "overridesApplied": {
           "type": "array",
           "items": { "type": "string", "minLength": 1 }
-        },
-        "commandsRun": {
-          "type": "array",
-          "items": { "type": "string", "minLength": 1 }
-        },
-        "how": { "type": "string", "minLength": 1 },
-        "why": { "type": "string", "minLength": 1 }
+        }
       }
     },
     "verification": {
@@ -122,8 +116,6 @@
         "createdAt": { "type": "string", "format": "date-time" },
         "packageName": { "type": "string", "minLength": 1 },
         "status": { "$ref": "#/$defs/status" },
-        "attemptCount": { "type": "integer", "minimum": 0 },
-        "handbackRetryCount": { "type": "integer", "minimum": 0 },
         "startedAt": { "type": "string", "format": "date-time" },
         "lastAttemptAt": { "type": "string", "format": "date-time" },
         "completedAt": { "type": "string", "format": "date-time" },
@@ -141,11 +133,6 @@
         },
         "lastFailureAt": { "type": "string", "format": "date-time" },
         "lastFailureMessage": { "type": "string", "minLength": 1 },
-        "lastActor": {
-          "type": "string",
-          "enum": ["snyk-orchestration", "snyk-resolve-dep", "snyk-resolve-code"]
-        },
-        "depOrigin": { "type": "string", "enum": ["direct", "transitive", "mixed"] },
         "vulnerablePackage": { "type": "string", "minLength": 1 },
         "vulnerableVersions": {
           "type": "array",

@@ -23,7 +23,6 @@ from ._shared import (
     collect_list_evidence_paths,
     collect_observed_versions,
     collect_reachable_importers,
-    determine_dep_origin,
 )
 
 
@@ -78,11 +77,6 @@ class PnpmAdapter(PackageManagerAdapter):
                 'could be reconstructed from pnpm why or pnpm list.'
             )
 
-        dep_origin = determine_dep_origin(
-            context.package_name,
-            active_direct_declarations,
-            evidence_paths,
-        )
         candidate_levers = build_candidate_levers(
             context.package_name,
             bool(graph),
@@ -94,7 +88,6 @@ class PnpmAdapter(PackageManagerAdapter):
             'manager': self.name,
             'packageName': context.package_name,
             'workspacePackage': context.workspace_package or 'unknown',
-            'depOrigin': dep_origin,
             'controllableParents': controllable_parents,
             'evidencePaths': evidence_paths,
             'candidateLevers': candidate_levers,

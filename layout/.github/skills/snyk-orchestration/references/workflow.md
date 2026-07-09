@@ -25,7 +25,7 @@ Dieser Workflow ist normativ. `snyk-orchestration` soll nicht "frei improvisiere
 
 5. **Gate [O4] — Handback Validation**
    - Handback streng gegen `handback-format.md` prüfen
-   - bei Parse-/Format-Fehler `ledger.py record-failure --consume-handback-retry` nutzen und genau ein Retry
+   - bei Parse-/Format-Fehler `ledger.py record-failure` nutzen und den Fehler präzise persistieren
 
 6. **Gate [O5] — Override Validation**
    - nur falls Overrides gemeldet wurden
@@ -88,4 +88,4 @@ Es gibt keinen vierten semantischen Endzustand.
 - `snyk-session-init` erzeugt die Dateien.
 - Resolver schreiben advisory-spezifische Learnings nur nach `.synk/{sessionId}/GOTCHAS.md`.
 - `snyk-orchestration` schreibt Orchestrator-Notizen ebenfalls in die Session-Datei und ist allein für Promotionen nach `.snyk/GOTCHAS.md` verantwortlich.
-- Retry-/Resume-relevante Fehlerzustände werden zusätzlich im Ledger persistiert.
+- Resume-/Failure-relevante Fehlerzustände werden zusätzlich im Ledger persistiert.
