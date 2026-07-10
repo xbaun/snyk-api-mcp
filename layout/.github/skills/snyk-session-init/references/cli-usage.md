@@ -17,11 +17,11 @@ Before initialization:
 
 Target-scoped seed:
 
-- `pnpm dlx ajv-cli validate --spec=draft2020 -s .github/skills/snyk-session-init/schemas/issues-ledger-seed.schema.json -d .synk/{sessionId}/issues-ledger-seed.json`
+- `pnpm dlx --package=ajv-cli --package=ajv-formats ajv validate -c ajv-formats --spec=draft2020 -s .github/skills/snyk-session-init/schemas/issues-ledger-seed.schema.json -d .synk/{sessionId}/issues-ledger-seed.json`
 
 Project-scoped seed:
 
-- `pnpm dlx ajv-cli validate --spec=draft2020 -s .github/skills/snyk-session-init/schemas/project-issues-ledger-seed.schema.json -d .synk/{sessionId}/issues-ledger-seed.json`
+- `pnpm dlx --package=ajv-cli --package=ajv-formats ajv validate -c ajv-formats --spec=draft2020 -s .github/skills/snyk-session-init/schemas/project-issues-ledger-seed.schema.json -d .synk/{sessionId}/issues-ledger-seed.json`
 
 AJV validates the seed contract. `ledger.py init` remains the canonical owner of advisory materialization into `issues-ledger.json`.
 

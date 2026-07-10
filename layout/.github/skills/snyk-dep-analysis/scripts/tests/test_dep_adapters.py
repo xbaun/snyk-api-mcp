@@ -11,40 +11,58 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-REPO_ROOT = Path(__file__).resolve().parents[5]
-FIXTURE_DIR = REPO_ROOT / '.temp' / 'debug' / 'files'
+REPO_ROOT = next(parent for parent in Path(__file__).resolve().parents if (parent / 'fixtures').exists())
+FIXTURE_DIR = REPO_ROOT / 'fixtures'
+
+FIXTURE_MANIFEST_RAW = {
+    'name': 'fixture-dep-app',
+    'dependencies': {
+        'axios': '^1.18.1',
+    },
+}
 
 from dep.adapters import NpmAdapter, PnpmAdapter, YarnAdapter, collect_list_evidence_paths
 from dep.common import AnalysisContext, DepAnalysisError, ManifestInfo
 from dep.adapters.yarn import version_satisfies_selector
 
 
+def build_fixture_manifest() -> ManifestInfo:
+    return ManifestInfo(
+        name=FIXTURE_MANIFEST_RAW['name'],
+        manifest_path=FIXTURE_DIR / 'package.json',
+        relative_manifest_path='package.json',
+        relative_dir='.',
+        raw=FIXTURE_MANIFEST_RAW,
+    )
+
+
 class PnpmAdapterFallbackTests(unittest.TestCase):
     def test_collect_list_evidence_paths_reconstructs_transitive_chain(self) -> None:
-        manifest = ManifestInfo(
-            name='studio-app',
-            manifest_path=Path('/tmp/apps/studio/package.json'),
-            relative_manifest_path='apps/studio/package.json',
-            relative_dir='apps/studio',
-            raw={
-                'name': 'studio-app',
-                'dependencies': {
-                    '@sanity/vision': '5.17.1',
-                },
-            },
-        )
+        manifest = build_fixture_manifest()
         trees = [
             {
-                'name': 'studio-app',
+                'name': manifest.name,
                 'version': '1.0.0',
                 'dependencies': {
-                    '@sanity/vision': {
-                        'from': '@sanity/vision',
-                        'version': '5.17.1',
+                    'axios': {
+                        'from': 'axios',
+                        'version': '1.18.1',
                         'dependencies': {
-                            'json-2-csv': {
-                                'from': 'json-2-csv',
-                                'version': '5.5.9',
+                            'form-data': {
+                                'from': 'form-data',
+                                'version': '4.0.6',
+                                'dependencies': {
+                                    'mime-types': {
+                                        'from': 'mime-types',
+                                        'version': '2.1.35',
+                                        'dependencies': {
+                                            'mime-db': {
+                                                'from': 'mime-db',
+                                                'version': '1.52.0',
+                                            }
+                                        },
+                                    }
+                                },
                             }
                         },
                     }
@@ -52,17 +70,22 @@ class PnpmAdapterFallbackTests(unittest.TestCase):
             }
         ]
 
-        paths = collect_list_evidence_paths(trees, [manifest], 'json-2-csv', 8)
+        paths = collect_list_evidence_paths(trees, [manifest], 'mime-db', 8)
 
         self.assertEqual(
             paths,
             [
                 {
-                    'importer': 'studio-app',
-                    'importerPath': 'apps/studio',
+                    'importer': manifest.name,
+                    'importerPath': '.',
                     'dependencyType': 'dependencies',
-                    'directDependency': '@sanity/vision@5.17.1',
-                    'chain': ['@sanity/vision@5.17.1', 'json-2-csv@5.5.9'],
+                    'directDependency': 'axios@1.18.1',
+                    'chain': [
+                        'axios@1.18.1',
+                        'form-data@4.0.6',
+                        'mime-types@2.1.35',
+                        'mime-db@1.52.0',
+                    ],
                 }
             ],
         )
@@ -70,29 +93,28 @@ class PnpmAdapterFallbackTests(unittest.TestCase):
     def test_load_evidence_paths_falls_back_to_pnpm_list(self) -> None:
         adapter = PnpmAdapter()
         context = AnalysisContext(
-            repo_root=Path('/tmp/repo'),
-            package_name='json-2-csv',
-            workspace_package='apps/studio',
+            repo_root=FIXTURE_DIR,
+            package_name='mime-db',
+            workspace_package=None,
             manager='pnpm',
             max_paths=8,
             prod_only=False,
             dev_only=False,
             vulnerable_versions=(),
         )
-        manifest = ManifestInfo(
-            name='studio-app',
-            manifest_path=Path('/tmp/apps/studio/package.json'),
-            relative_manifest_path='apps/studio/package.json',
-            relative_dir='apps/studio',
-            raw={'name': 'studio-app', 'dependencies': {'@sanity/vision': '5.17.1'}},
-        )
+        manifest = build_fixture_manifest()
         fallback_paths = [
             {
-                'importer': 'studio-app',
-                'importerPath': 'apps/studio',
+                'importer': manifest.name,
+                'importerPath': '.',
                 'dependencyType': 'dependencies',
-                'directDependency': '@sanity/vision@5.17.1',
-                'chain': ['@sanity/vision@5.17.1', 'json-2-csv@5.5.9'],
+                'directDependency': 'axios@1.18.1',
+                'chain': [
+                    'axios@1.18.1',
+                    'form-data@4.0.6',
+                    'mime-types@2.1.35',
+                    'mime-db@1.52.0',
+                ],
             }
         ]
 
@@ -104,7 +126,7 @@ class PnpmAdapterFallbackTests(unittest.TestCase):
             paths = adapter._load_evidence_paths(
                 context,
                 [manifest],
-                [{'name': 'json-2-csv', 'version': '5.5.9'}],
+                [{'name': 'mime-db', 'version': '1.52.0'}],
             )
 
         self.assertEqual(paths, fallback_paths)
@@ -113,27 +135,21 @@ class PnpmAdapterFallbackTests(unittest.TestCase):
     def test_trace_fails_clearly_when_no_path_can_be_proven(self) -> None:
         adapter = PnpmAdapter()
         context = AnalysisContext(
-            repo_root=Path('/tmp/repo'),
-            package_name='json-2-csv',
-            workspace_package='apps/studio',
+            repo_root=FIXTURE_DIR,
+            package_name='mime-db',
+            workspace_package=None,
             manager='pnpm',
             max_paths=8,
             prod_only=False,
             dev_only=False,
             vulnerable_versions=(),
         )
-        manifest = ManifestInfo(
-            name='studio-app',
-            manifest_path=Path('/tmp/apps/studio/package.json'),
-            relative_manifest_path='apps/studio/package.json',
-            relative_dir='apps/studio',
-            raw={'name': 'studio-app', 'dependencies': {'@sanity/vision': '5.17.1'}},
-        )
+        manifest = build_fixture_manifest()
 
         with patch.object(
             adapter,
             '_load_why_graph',
-            return_value=[{'name': 'json-2-csv', 'version': '5.5.9'}],
+            return_value=[{'name': 'mime-db', 'version': '1.52.0'}],
         ), patch.object(adapter, '_load_evidence_paths', return_value=[]):
             with self.assertRaisesRegex(
                 DepAnalysisError,
@@ -144,17 +160,10 @@ class PnpmAdapterFallbackTests(unittest.TestCase):
 
 class NpmAdapterFixtureTests(unittest.TestCase):
     def test_trace_reconstructs_package_lock_chain(self) -> None:
-        package_lock = json.loads((FIXTURE_DIR / 'package-lock.json').read_text(encoding='utf-8'))
-        manifest = ManifestInfo(
-            name=package_lock['packages']['']['name'],
-            manifest_path=FIXTURE_DIR / 'package.json',
-            relative_manifest_path='package.json',
-            relative_dir='.',
-            raw=package_lock['packages'][''],
-        )
+        manifest = build_fixture_manifest()
         context = AnalysisContext(
             repo_root=FIXTURE_DIR,
-            package_name='graphql-tag',
+            package_name='mime-db',
             workspace_package=None,
             manager='npm',
             max_paths=8,
@@ -172,49 +181,47 @@ class NpmAdapterFixtureTests(unittest.TestCase):
                 'importer': manifest.name,
                 'importerPath': '.',
                 'dependencyType': 'dependencies',
-                'directDependency': '@apollo/client@3.7.5',
-                'chain': ['@apollo/client@3.7.5', 'graphql-tag@2.12.6'],
+                'directDependency': 'axios@1.18.1',
+                'chain': [
+                    'axios@1.18.1',
+                    'form-data@4.0.6',
+                    'mime-types@2.1.35',
+                    'mime-db@1.52.0',
+                ],
             },
         )
         self.assertIn(
             {
-                'package': '@apollo/client',
+                'package': 'axios',
                 'declaredIn': 'package.json',
                 'dependencyType': 'dependencies',
-                'declaredVersion': '3.7.5',
+                'declaredVersion': '^1.18.1',
             },
             result['controllableParents'],
         )
         self.assertEqual(result['candidateLevers'], ['update-parent', 'temp-override'])
 
     def test_verify_reports_reachable_vulnerable_npm_versions(self) -> None:
-        package_lock = json.loads((FIXTURE_DIR / 'package-lock.json').read_text(encoding='utf-8'))
-        manifest = ManifestInfo(
-            name=package_lock['packages']['']['name'],
-            manifest_path=FIXTURE_DIR / 'package.json',
-            relative_manifest_path='package.json',
-            relative_dir='.',
-            raw=package_lock['packages'][''],
-        )
+        manifest = build_fixture_manifest()
         context = AnalysisContext(
             repo_root=FIXTURE_DIR,
-            package_name='graphql-tag',
+            package_name='mime-db',
             workspace_package=None,
             manager='npm',
             max_paths=8,
             prod_only=False,
             dev_only=False,
-            vulnerable_versions=('2.12.6',),
+            vulnerable_versions=('1.52.0',),
         )
 
         result = NpmAdapter().verify(context, [manifest])
 
         self.assertEqual(result['dependencyCheck'], 'fail')
-        self.assertEqual(result['observedVersions'], ['2.12.6'])
-        self.assertEqual(result['reachableVulnerableVersions'], ['2.12.6'])
+        self.assertEqual(result['observedVersions'], ['1.52.0'])
+        self.assertEqual(result['reachableVulnerableVersions'], ['1.52.0'])
         self.assertEqual(
             result['remainingPaths'][0]['chain'],
-            ['@apollo/client@3.7.5', 'graphql-tag@2.12.6'],
+            ['axios@1.18.1', 'form-data@4.0.6', 'mime-types@2.1.35', 'mime-db@1.52.0'],
         )
 
     def test_trace_does_not_treat_peer_only_npm_declarations_as_reachable(self) -> None:
@@ -265,21 +272,10 @@ class NpmAdapterFixtureTests(unittest.TestCase):
 
 class YarnAdapterFixtureTests(unittest.TestCase):
     def test_trace_reconstructs_yarn_lock_chain(self) -> None:
-        manifest = ManifestInfo(
-            name='fixture-yarn-app',
-            manifest_path=FIXTURE_DIR / 'package.json',
-            relative_manifest_path='package.json',
-            relative_dir='.',
-            raw={
-                'name': 'fixture-yarn-app',
-                'dependencies': {
-                    'glob': '^10.4.5',
-                },
-            },
-        )
+        manifest = build_fixture_manifest()
         context = AnalysisContext(
             repo_root=FIXTURE_DIR,
-            package_name='package-json-from-dist',
+            package_name='mime-db',
             workspace_package=None,
             manager='yarn',
             max_paths=8,
@@ -294,56 +290,50 @@ class YarnAdapterFixtureTests(unittest.TestCase):
         self.assertEqual(
             result['evidencePaths'][0],
             {
-                'importer': 'fixture-yarn-app',
+                'importer': manifest.name,
                 'importerPath': '.',
                 'dependencyType': 'dependencies',
-                'directDependency': 'glob@10.4.5',
-                'chain': ['glob@10.4.5', 'package-json-from-dist@1.0.1'],
+                'directDependency': 'axios@1.18.1',
+                'chain': [
+                    'axios@1.18.1',
+                    'form-data@4.0.6',
+                    'mime-types@2.1.35',
+                    'mime-db@1.52.0',
+                ],
             },
         )
         self.assertIn(
             {
-                'package': 'glob',
+                'package': 'axios',
                 'declaredIn': 'package.json',
                 'dependencyType': 'dependencies',
-                'declaredVersion': '^10.4.5',
+                'declaredVersion': '^1.18.1',
             },
             result['controllableParents'],
         )
         self.assertEqual(result['candidateLevers'], ['update-parent', 'temp-override'])
 
     def test_verify_reports_reachable_vulnerable_yarn_versions(self) -> None:
-        manifest = ManifestInfo(
-            name='fixture-yarn-app',
-            manifest_path=FIXTURE_DIR / 'package.json',
-            relative_manifest_path='package.json',
-            relative_dir='.',
-            raw={
-                'name': 'fixture-yarn-app',
-                'dependencies': {
-                    'glob': '^10.4.5',
-                },
-            },
-        )
+        manifest = build_fixture_manifest()
         context = AnalysisContext(
             repo_root=FIXTURE_DIR,
-            package_name='package-json-from-dist',
+            package_name='mime-db',
             workspace_package=None,
             manager='yarn',
             max_paths=8,
             prod_only=False,
             dev_only=False,
-            vulnerable_versions=('1.0.1',),
+            vulnerable_versions=('1.52.0',),
         )
 
         result = YarnAdapter().verify(context, [manifest])
 
         self.assertEqual(result['dependencyCheck'], 'fail')
-        self.assertEqual(result['observedVersions'], ['1.0.1'])
-        self.assertEqual(result['reachableVulnerableVersions'], ['1.0.1'])
+        self.assertEqual(result['observedVersions'], ['1.52.0'])
+        self.assertEqual(result['reachableVulnerableVersions'], ['1.52.0'])
         self.assertEqual(
             result['remainingPaths'][0]['chain'],
-            ['glob@10.4.5', 'package-json-from-dist@1.0.1'],
+            ['axios@1.18.1', 'form-data@4.0.6', 'mime-types@2.1.35', 'mime-db@1.52.0'],
         )
 
     def test_trace_does_not_treat_peer_only_yarn_declarations_as_reachable(self) -> None:

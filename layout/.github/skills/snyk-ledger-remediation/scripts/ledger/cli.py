@@ -339,7 +339,9 @@ def build_parser() -> argparse.ArgumentParser:
             Fallback mode:
               provide inline flags for deterministic testing, debugging,
               or narrowly scoped manual repair.
-              Inline flags still need to obey the handback contract semantics.
+                            Inline flags still need to obey the handback contract semantics.
+                            Inline mode requires `--issue-type`, `--status`, and the
+                            issue-type-specific required handback fields.
 
             `update` writes final result fields like `status`, `implementation`, `verification`,
             and `outcome`, and stamps `completedAt` for non-`in-progress` states.
@@ -394,7 +396,10 @@ def build_parser() -> argparse.ArgumentParser:
         metavar='PATH',
         help='Resolver handback JSON source. Use `-` to read from stdin; pass a path only when the handback already exists on disk.',
     )
-    update_parser.add_argument('--issue-type', help='Handback field `issueType`.')
+    update_parser.add_argument(
+        '--issue-type',
+        help='Handback field `issueType`. Required for inline mode and must match the advisory issueType.',
+    )
     update_parser.add_argument('--status', help='Handback field `status`. Required for inline mode.')
     update_parser.add_argument('--package', help='Handback field `vulnerablePackage`.')
     update_parser.add_argument(
@@ -429,6 +434,11 @@ def build_parser() -> argparse.ArgumentParser:
         '--overrides',
         metavar='JSON',
         help='JSON array for `implementation.overridesApplied`.',
+    )
+    update_parser.add_argument(
+        '--override-preflight',
+        metavar='JSON',
+        help='JSON object for `implementation.overridePreflight`.',
     )
     update_parser.add_argument(
         '--dep-check',

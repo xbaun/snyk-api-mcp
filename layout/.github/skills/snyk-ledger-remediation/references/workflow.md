@@ -28,6 +28,7 @@ This workflow is normative. `snyk-ledger-remediation` must follow it exactly.
 
 6. **Gate [O5] — Override Validation**
    - Run only if overrides were reported.
+   - Require structured `implementation.overridePreflight` evidence for every `temp-override` handback.
 
 7. **Gate [O6] — Code Health Validation**
    - Check minimum consistency of claimed verification results.

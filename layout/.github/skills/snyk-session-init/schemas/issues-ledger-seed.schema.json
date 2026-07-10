@@ -4,7 +4,7 @@
   "title": "issues-ledger-seed",
   "type": "object",
   "additionalProperties": false,
-  "required": ["query", "target", "collection", "issues", "advisories"],
+  "required": ["$schema", "query", "target", "collection", "issues", "advisories"],
   "properties": {
     "$schema": {
       "type": "string",
@@ -93,6 +93,11 @@
         "projectId": { "type": "string", "minLength": 1, "description": "Canonical Snyk project ID. Do not rename to legacy 'scanItemId'." },
         "projectName": { "type": "string", "minLength": 1 },
         "workspacePackage": { "type": "string", "minLength": 1 },
+        "vulnerabilityId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Canonical Snyk vulnerability ID for package_vulnerability issues when one unambiguous value is available from REST issue problems[]."
+        },
         "purl": { "type": "string", "minLength": 1 },
         "packageName": { "type": "string", "minLength": 1 },
         "filePath": { "type": "string", "minLength": 1 },

@@ -102,17 +102,20 @@ Interpretation rules:
 ### Override handling
 
 - Before considering `temp-override`, inspect existing state with `overrides.py analyze`.
+- If `analyze` reports an active matching case or an `exact-selector` conflict, reuse or update that case instead of creating a duplicate override entry.
 - Never handcraft override JSON.
 - Use the canonical materialization path from repo context; here it is `snyk-dep-overrides.pnpm.json`.
 - If the file is missing, let `overrides.py upsert` create it.
 - After `upsert`, run `overrides.py materialize --workspace pnpm-workspace.yaml`.
 - Before claiming override-based success, require `overrides.py validate --workspace pnpm-workspace.yaml` to pass.
+- If `strategy = temp-override`, record the actual analyze decision surface in `implementation.overridePreflight`.
 
 ### Compact `overrides.py` sequence
 
 - Pre-flight existing cases:
   - `python3 .github/skills/snyk-dep-overrides/scripts/overrides.py analyze --materialization snyk-dep-overrides.pnpm.json --package <packageName>`
-  - if advisory coverage must be checked, add `--snyk-id <snykId>`
+  - if advisory coverage must be checked and a real Snyk vulnerability ID is already available from current evidence, add `--snyk-id <snykId>`
+  - never invent `snykId` and do not treat `restIssueId`, `issueKey`, or `advisoryKey` as interchangeable with it
   - before a new case, add `--check-selector <selector> --status active`
 - Optional focused inspection:
   - `python3 .github/skills/snyk-dep-overrides/scripts/overrides.py read --materialization snyk-dep-overrides.pnpm.json --key <caseKey>`
@@ -129,6 +132,12 @@ Interpretation rules:
 - Use `analyze` as the decision surface; do not infer broader state from `summary.conflictingSelectors[]` alone.
 - `conflictType = exact-selector` usually means reuse or update, not duplicate.
 - `conflictType = same-package` is a review signal, not automatic proof of semver incompatibility.
+- `implementation.overridePreflight` must reflect the actual analyze result used for the decision with:
+  - `materializationPresent`
+  - `queryPackage`
+  - `matchingCaseKeys`
+  - `selectorConflict`
+  - `disposition`
 - Use `read` only after `analyze` or another deterministic source has produced a concrete `key`.
 - Use `list` for overview, not as a substitute for `analyze` when deciding coverage.
 - If the materialization name is non-canonical, pass `--manager <manager>` explicitly to `analyze`, `read`, `list`, or `remove`.
@@ -173,7 +182,7 @@ Otherwise return `blocked` with `complexity = architectural`, plus a concrete `r
 ### Gate [R2] — Fact Set
 
 - Start from a representative issue instance in the handoff.
-- Use `projectId`, `restIssueId`, `issueKey`, `purl`, `packageName`, and `workspacePackage`.
+- Use `projectId`, `restIssueId`, `issueKey`, `vulnerabilityId`, `purl`, `packageName`, and `workspacePackage`.
 - Build the initial fact set with `dep.py inspect` before falling back to raw repo artifacts.
 - If there is no clear target version or no actionable fact set, return `blocked`.
 
@@ -231,6 +240,7 @@ Otherwise return `blocked` with `complexity = architectural`, plus a concrete `r
 - Allowed `status` values are `resolved`, `partially-resolved`, and `blocked`.
 - For `blocked` and `partially-resolved`, include explicit blockers, remediation proposal, and rationale.
 - If `strategy = temp-override`, report the concrete override in `implementation.overridesApplied`.
+- If `strategy = temp-override`, also include `implementation.overridePreflight` from the actual `overrides.py analyze` pre-flight.
 - If `verification.dependencyCheck != pass`, do not claim `resolved`.
 
 ## Quality bar

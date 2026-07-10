@@ -94,6 +94,7 @@ Build one deterministic resolver briefing from ledger + seed.
 4. Include at least one representative issue instance with all required fields for the `issueType`.
 5. For `package_vulnerability`:
    - keep `packageName` unchanged as the primary compact identity
+   - keep `vulnerabilityId` unchanged when one unambiguous seed value exists; otherwise use `unknown` in the handoff
    - keep `purl` unchanged as the exact fallback identity
    - treat `workspacePackage` only as a scope hint; use `unknown` when no reliable value exists
    - do not invent alternate package names or run extra package discovery before the resolver starts
@@ -113,6 +114,7 @@ Build one deterministic resolver briefing from ledger + seed.
 - implicit defaults outside the documented format
 - dep-analysis or override context in a `code` handoff when the resolver does not need it
 - heuristic rewriting of `packageName`, `purl`, or `workspacePackage`
+- heuristic invention or rewriting of `vulnerabilityId`
 
 ---
 
@@ -163,11 +165,17 @@ Run only when the dep handback reports non-empty `implementation.overridesApplie
 ### Steps
 
 1. Confirm that `snyk-dep-overrides.pnpm.json` exists.
-2. Require evidence that the resolver checked existing state with `overrides.py analyze` before adding a new temp override.
-3. Require `overrides.py materialize --workspace pnpm-workspace.yaml` when `temp-override` was used.
-4. Validate deterministically with `overrides.py validate --materialization snyk-dep-overrides.pnpm.json --workspace pnpm-workspace.yaml`.
-5. Confirm that the override reported in the handback matches the validated materialized state.
-6. On failure, treat the advisory as `blocked`.
+2. Require `implementation.overridePreflight` in the handback with exactly these fields:
+   - `materializationPresent`
+   - `queryPackage`
+   - `matchingCaseKeys`
+   - `selectorConflict`
+   - `disposition`
+3. Require evidence that this object came from a real `overrides.py analyze` pre-flight before the resolver reused or created a `temp-override` case.
+4. Require `overrides.py materialize --workspace pnpm-workspace.yaml` when `temp-override` was used.
+5. Validate deterministically with `overrides.py validate --materialization snyk-dep-overrides.pnpm.json --workspace pnpm-workspace.yaml`.
+6. Confirm that the override reported in the handback matches the validated materialized state, and that `implementation.overridePreflight.disposition` agrees with whether an existing case was reused or a new case was created.
+7. On failure, treat the advisory as `blocked`.
 
 ### Pass
 

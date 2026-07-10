@@ -9,6 +9,7 @@ from typing import Any
 from .common import (
     ALLOWED_FAILURE_KIND,
     ALLOWED_STATUS,
+    ALLOWED_SEVERITY,
     LedgerError,
     advisory_package,
     find_advisory,
@@ -17,7 +18,11 @@ from .common import (
     load_ledger,
     now_iso,
     parse_json_array,
+    parse_json_object,
     print_json,
+    require_list,
+    require_non_empty_string,
+    require_object,
     select_advisory,
     sort_advisories,
     status_counts,
@@ -39,6 +44,364 @@ TOP_LEVEL_HANDBACK_FIELDS = [
     'severity',
 ]
 NESTED_HANDBACK_FIELDS = ['implementation', 'verification', 'outcome']
+
+ALLOWED_PACKAGE_STATUS = {'resolved', 'partially-resolved', 'blocked'}
+ALLOWED_CODE_STATUS = {'resolved', 'blocked'}
+ALLOWED_PACKAGE_STRATEGY = {
+    'update-direct',
+    'update-parent',
+    'consolidated-shared-upgrade',
+    'temp-override',
+}
+ALLOWED_PACKAGE_RISK_LEVEL = {'low', 'medium', 'high'}
+ALLOWED_PACKAGE_COMPLEXITY = {'contained', 'architectural'}
+ALLOWED_CODE_RESOLVED_COMPLEXITY = {'trivial', 'contained'}
+ALLOWED_CODE_BLOCKED_COMPLEXITY = {'false-positive', 'architectural'}
+ALLOWED_IMPLEMENTATION_FIELDS = {
+    'filesChanged',
+    'dependencyUpdates',
+    'parentUpdates',
+    'overridesApplied',
+    'overridePreflight',
+}
+ALLOWED_VERIFICATION_FIELDS = {'dependencyCheck', 'lint', 'typecheck', 'tests', 'build'}
+ALLOWED_OUTCOME_FIELDS = {'result', 'summary', 'blockers', 'remediationProposal', 'rationale'}
+ALLOWED_TOP_LEVEL_FIELDS = set(TOP_LEVEL_HANDBACK_FIELDS) | set(NESTED_HANDBACK_FIELDS)
+ALLOWED_PACKAGE_TOP_LEVEL_FIELDS = {
+    'issueType',
+    'status',
+    'vulnerablePackage',
+    'vulnerableVersions',
+    'targetVersion',
+    'strategy',
+    'riskLevel',
+    'complexity',
+    'implementation',
+    'verification',
+    'outcome',
+}
+ALLOWED_CODE_RESOLVED_TOP_LEVEL_FIELDS = {
+    'issueType',
+    'status',
+    'filePath',
+    'lineRange',
+    'cweId',
+    'severity',
+    'complexity',
+    'implementation',
+    'verification',
+    'outcome',
+}
+ALLOWED_CODE_BLOCKED_TOP_LEVEL_FIELDS = {
+    'issueType',
+    'status',
+    'filePath',
+    'lineRange',
+    'cweId',
+    'severity',
+    'complexity',
+    'outcome',
+}
+
+
+def ensure_allowed_keys(value: dict[str, Any], allowed: set[str], field_name: str) -> None:
+    unexpected = sorted(key for key in value if key not in allowed)
+    if unexpected:
+        raise LedgerError(
+            f"Field '{field_name}' contains unsupported keys: {', '.join(unexpected)}."
+        )
+
+
+def ensure_no_nulls(value: Any, field_name: str) -> None:
+    if value is None:
+        raise LedgerError(f"Field '{field_name}' must not be null.")
+
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            ensure_no_nulls(nested, f'{field_name}.{key}')
+        return
+
+    if isinstance(value, list):
+        for index, nested in enumerate(value):
+            ensure_no_nulls(nested, f'{field_name}[{index}]')
+
+
+def require_enum(value: Any, allowed: set[str], field_name: str) -> str:
+    normalized = require_non_empty_string(value, field_name)
+    if normalized not in allowed:
+        raise LedgerError(
+            f"Field '{field_name}' must be one of: {', '.join(sorted(allowed))}."
+        )
+    return normalized
+
+
+def require_string_array(value: Any, field_name: str, *, min_items: int = 0) -> list[str]:
+    items = require_list(value, field_name)
+    if len(items) < min_items:
+        qualifier = f' >= {min_items}' if min_items else ' >= 0'
+        raise LedgerError(f"Field '{field_name}' must contain{qualifier} items.")
+
+    result: list[str] = []
+    for index, item in enumerate(items):
+        result.append(require_non_empty_string(item, f'{field_name}[{index}]'))
+    return result
+
+
+def validate_override_preflight(preflight: Any, vulnerable_package: str) -> None:
+    preflight_obj = require_object(preflight, 'implementation.overridePreflight')
+    ensure_allowed_keys(preflight_obj, {'materializationPresent', 'queryPackage', 'matchingCaseKeys', 'selectorConflict', 'disposition'}, 'implementation.overridePreflight')
+
+    missing = [
+        field
+        for field in ('materializationPresent', 'queryPackage', 'matchingCaseKeys', 'selectorConflict', 'disposition')
+        if field not in preflight_obj
+    ]
+    if missing:
+        raise LedgerError(
+            'implementation.overridePreflight is missing required fields: '
+            + ', '.join(missing)
+        )
+
+    materialization_present = preflight_obj.get('materializationPresent')
+    if not isinstance(materialization_present, bool):
+        raise LedgerError("Field 'implementation.overridePreflight.materializationPresent' must be boolean.")
+
+    query_package = require_non_empty_string(
+        preflight_obj.get('queryPackage'),
+        'implementation.overridePreflight.queryPackage',
+    )
+    if query_package != vulnerable_package:
+        raise LedgerError(
+            "Field 'implementation.overridePreflight.queryPackage' must match 'vulnerablePackage'."
+        )
+
+    matching_case_keys = require_string_array(
+        preflight_obj.get('matchingCaseKeys'),
+        'implementation.overridePreflight.matchingCaseKeys',
+    )
+    selector_conflict = require_enum(
+        preflight_obj.get('selectorConflict'),
+        {'none', 'exact-selector', 'same-package'},
+        'implementation.overridePreflight.selectorConflict',
+    )
+    disposition = require_enum(
+        preflight_obj.get('disposition'),
+        {'reuse-existing-case', 'create-new-case'},
+        'implementation.overridePreflight.disposition',
+    )
+
+    if not materialization_present:
+        if matching_case_keys:
+            raise LedgerError(
+                "Field 'implementation.overridePreflight.matchingCaseKeys' must be empty when no materialization existed."
+            )
+        if selector_conflict != 'none':
+            raise LedgerError(
+                "Field 'implementation.overridePreflight.selectorConflict' must be 'none' when no materialization existed."
+            )
+        if disposition != 'create-new-case':
+            raise LedgerError(
+                "Field 'implementation.overridePreflight.disposition' must be 'create-new-case' when no materialization existed."
+            )
+
+    if disposition == 'reuse-existing-case':
+        if not materialization_present:
+            raise LedgerError(
+                "Field 'implementation.overridePreflight.disposition' cannot reuse a case without prior materialization."
+            )
+        if not matching_case_keys and selector_conflict == 'none':
+            raise LedgerError(
+                "Field 'implementation.overridePreflight.disposition' requires matchingCaseKeys or a selector conflict when reusing a case."
+            )
+
+    if disposition == 'create-new-case' and (matching_case_keys or selector_conflict == 'exact-selector'):
+        raise LedgerError(
+            'Temp override handback cannot create a new case when analyze already found active matching cases or an exact-selector conflict.'
+        )
+
+
+def validate_implementation(
+    implementation: Any,
+    *,
+    issue_type: str,
+    require_files_changed: bool,
+    vulnerable_package: str | None = None,
+    strategy: str | None = None,
+) -> None:
+    implementation_obj = require_object(implementation, 'implementation')
+    ensure_allowed_keys(implementation_obj, ALLOWED_IMPLEMENTATION_FIELDS, 'implementation')
+
+    if require_files_changed or 'filesChanged' in implementation_obj:
+        require_string_array(implementation_obj.get('filesChanged'), 'implementation.filesChanged')
+
+    if 'dependencyUpdates' in implementation_obj:
+        require_string_array(implementation_obj.get('dependencyUpdates'), 'implementation.dependencyUpdates', min_items=1)
+    if 'parentUpdates' in implementation_obj:
+        require_string_array(implementation_obj.get('parentUpdates'), 'implementation.parentUpdates', min_items=1)
+
+    if strategy == 'temp-override':
+        require_string_array(
+            implementation_obj.get('overridesApplied'),
+            'implementation.overridesApplied',
+            min_items=1,
+        )
+        validate_override_preflight(implementation_obj.get('overridePreflight'), vulnerable_package or '')
+    else:
+        if 'overridesApplied' in implementation_obj or 'overridePreflight' in implementation_obj:
+            raise LedgerError(
+                'Override fields are only allowed when strategy is temp-override.'
+            )
+
+    if issue_type == 'code' and (
+        'dependencyUpdates' in implementation_obj
+        or 'parentUpdates' in implementation_obj
+        or 'overridesApplied' in implementation_obj
+        or 'overridePreflight' in implementation_obj
+    ):
+        raise LedgerError('Code handbacks must not report dependency override implementation fields.')
+
+
+def validate_verification(
+    verification: Any,
+    *,
+    issue_type: str,
+    status: str,
+) -> None:
+    verification_obj = require_object(verification, 'verification')
+    ensure_allowed_keys(verification_obj, ALLOWED_VERIFICATION_FIELDS, 'verification')
+
+    if issue_type == 'package_vulnerability':
+        missing = [
+            field
+            for field in ('dependencyCheck', 'lint', 'typecheck', 'tests', 'build')
+            if field not in verification_obj
+        ]
+        if missing:
+            raise LedgerError(
+                "verification is missing required package fields: " + ', '.join(missing)
+            )
+        dependency_check = require_enum(
+            verification_obj.get('dependencyCheck'),
+            {'pass', 'fail'},
+            'verification.dependencyCheck',
+        )
+        for field in ('lint', 'typecheck', 'tests', 'build'):
+            require_enum(verification_obj.get(field), {'pass', 'fail', 'not-run'}, f'verification.{field}')
+        if status == 'resolved' and dependency_check != 'pass':
+            raise LedgerError(
+                "Resolved package handbacks require verification.dependencyCheck = 'pass'."
+            )
+        return
+
+    missing = [field for field in ('lint', 'typecheck', 'tests') if field not in verification_obj]
+    if missing:
+        raise LedgerError(
+            "verification is missing required code fields: " + ', '.join(missing)
+        )
+    for field in ('lint', 'typecheck', 'tests'):
+        require_enum(verification_obj.get(field), {'pass', 'fail', 'not-run'}, f'verification.{field}')
+    if 'dependencyCheck' in verification_obj or 'build' in verification_obj:
+        raise LedgerError(
+            'Code handbacks must not include verification.dependencyCheck or verification.build.'
+        )
+
+
+def validate_outcome(
+    outcome: Any,
+    *,
+    status: str,
+    require_blocking_fields: bool,
+) -> None:
+    outcome_obj = require_object(outcome, 'outcome')
+    ensure_allowed_keys(outcome_obj, ALLOWED_OUTCOME_FIELDS, 'outcome')
+    require_non_empty_string(outcome_obj.get('summary'), 'outcome.summary')
+    result = require_non_empty_string(outcome_obj.get('result'), 'outcome.result')
+    if result != status:
+        raise LedgerError("Field 'outcome.result' must match handback 'status'.")
+
+    if require_blocking_fields:
+        require_string_array(outcome_obj.get('blockers'), 'outcome.blockers', min_items=1)
+        require_non_empty_string(
+            outcome_obj.get('remediationProposal'),
+            'outcome.remediationProposal',
+        )
+        require_non_empty_string(outcome_obj.get('rationale'), 'outcome.rationale')
+
+
+def validate_package_handback(handback: dict[str, Any]) -> None:
+    ensure_allowed_keys(handback, ALLOWED_PACKAGE_TOP_LEVEL_FIELDS, 'handback')
+    status = require_enum(handback.get('status'), ALLOWED_PACKAGE_STATUS, 'status')
+    vulnerable_package = require_non_empty_string(handback.get('vulnerablePackage'), 'vulnerablePackage')
+    require_string_array(handback.get('vulnerableVersions'), 'vulnerableVersions', min_items=1)
+    strategy = require_enum(handback.get('strategy'), ALLOWED_PACKAGE_STRATEGY, 'strategy')
+    require_non_empty_string(handback.get('targetVersion'), 'targetVersion')
+    require_enum(handback.get('riskLevel'), ALLOWED_PACKAGE_RISK_LEVEL, 'riskLevel')
+    require_enum(handback.get('complexity'), ALLOWED_PACKAGE_COMPLEXITY, 'complexity')
+    validate_implementation(
+        handback.get('implementation'),
+        issue_type='package_vulnerability',
+        require_files_changed=True,
+        vulnerable_package=vulnerable_package,
+        strategy=strategy,
+    )
+    validate_verification(handback.get('verification'), issue_type='package_vulnerability', status=status)
+    validate_outcome(
+        handback.get('outcome'),
+        status=status,
+        require_blocking_fields=status in {'blocked', 'partially-resolved'},
+    )
+
+
+def validate_code_handback(handback: dict[str, Any]) -> None:
+    status = require_enum(handback.get('status'), ALLOWED_CODE_STATUS, 'status')
+    allowed_fields = (
+        ALLOWED_CODE_RESOLVED_TOP_LEVEL_FIELDS
+        if status == 'resolved'
+        else ALLOWED_CODE_BLOCKED_TOP_LEVEL_FIELDS
+    )
+    ensure_allowed_keys(handback, allowed_fields, 'handback')
+    require_non_empty_string(handback.get('filePath'), 'filePath')
+    require_non_empty_string(handback.get('lineRange'), 'lineRange')
+    require_non_empty_string(handback.get('cweId'), 'cweId')
+    require_enum(handback.get('severity'), ALLOWED_SEVERITY, 'severity')
+
+    if status == 'resolved':
+        require_enum(handback.get('complexity'), ALLOWED_CODE_RESOLVED_COMPLEXITY, 'complexity')
+        validate_implementation(
+            handback.get('implementation'),
+            issue_type='code',
+            require_files_changed=True,
+        )
+        validate_verification(handback.get('verification'), issue_type='code', status=status)
+        validate_outcome(handback.get('outcome'), status=status, require_blocking_fields=False)
+        return
+
+    require_enum(handback.get('complexity'), ALLOWED_CODE_BLOCKED_COMPLEXITY, 'complexity')
+    if 'implementation' in handback or 'verification' in handback:
+        raise LedgerError('Blocked code handbacks must not include implementation or verification blocks.')
+    validate_outcome(handback.get('outcome'), status=status, require_blocking_fields=True)
+
+
+def validate_handback(advisory: dict[str, Any], handback: dict[str, Any]) -> None:
+    ensure_no_nulls(handback, 'handback')
+    ensure_allowed_keys(handback, ALLOWED_TOP_LEVEL_FIELDS, 'handback')
+
+    issue_type = require_non_empty_string(handback.get('issueType'), 'issueType')
+    advisory_issue_type = require_non_empty_string(advisory.get('issueType'), 'advisory.issueType')
+    if issue_type != advisory_issue_type:
+        raise LedgerError(
+            f"Handback issueType '{issue_type}' does not match advisory issueType '{advisory_issue_type}'."
+        )
+
+    if issue_type == 'package_vulnerability':
+        validate_package_handback(handback)
+        return
+
+    if issue_type == 'code':
+        validate_code_handback(handback)
+        return
+
+    raise LedgerError(f"Unsupported handback issueType '{issue_type}'.")
 
 
 def load_handback_input(from_handback: str) -> dict[str, Any]:
@@ -85,11 +448,12 @@ def normalize_handback(handback: dict[str, Any], advisory_key: str) -> dict[str,
 def build_inline_handback(args: Any) -> dict[str, Any]:
     if not args.status:
         raise LedgerError("Inline update requires '--status'.")
+    if not args.issue_type:
+        raise LedgerError("Inline update requires '--issue-type'.")
 
-    handback: dict[str, Any] = {'status': args.status}
+    handback: dict[str, Any] = {'issueType': args.issue_type, 'status': args.status}
 
     optional_scalar_map = {
-        'issueType': args.issue_type,
         'vulnerablePackage': args.package,
         'targetVersion': args.target_version,
         'strategy': args.strategy,
@@ -113,6 +477,7 @@ def build_inline_handback(args: Any) -> dict[str, Any]:
         'dependencyUpdates': parse_json_array(args.dep_updates, 'dep-updates'),
         'parentUpdates': parse_json_array(args.parent_updates, 'parent-updates'),
         'overridesApplied': parse_json_array(args.overrides, 'overrides'),
+        'overridePreflight': parse_json_object(args.override_preflight, 'override-preflight'),
     }
     implementation = {key: value for key, value in implementation.items() if value not in (None, [], {})}
     if implementation:
@@ -144,6 +509,7 @@ def build_inline_handback(args: Any) -> dict[str, Any]:
 
 def apply_handback(advisory: dict[str, Any], handback: dict[str, Any]) -> None:
     handback = normalize_handback(handback, str(advisory.get('advisoryKey', '<unknown>')))
+    validate_handback(advisory, handback)
 
     if 'status' not in handback:
         raise LedgerError("Handback must include 'status'.")

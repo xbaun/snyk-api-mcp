@@ -39,6 +39,7 @@ Additional rules:
 
 - For `package_vulnerability`, `purl` is the exact project-facing package reference and the canonical fallback when `packageName` is not usable.
 - For `package_vulnerability`, `packageName` remains the preferred compact input for `dep.py`; do not rewrite it from `purl` when it already exists in seed context.
+- For `package_vulnerability`, `vulnerabilityId` is advisory-coverage context for override analysis when one unambiguous value exists; it does not replace `packageName` or `purl` as the primary dependency identity.
 - For `code`, `filePath`, `startLine`, and `endLine` are the direct entry point for code analysis.
 - `workspacePackage` is a scope hint, not the primary finding identity; if no reliable value exists, keep it exactly as `unknown`.
 
@@ -54,7 +55,7 @@ ISSUE_COUNT: {issueCount}
 
 REPRESENTATIVE ISSUE INSTANCES:
   For issueType = package_vulnerability:
-  - projectId={projectId}, restIssueId={restIssueId}, issueKey={issueKey}, purl={purl}, packageName={packageName}, workspacePackage={workspacePackage | "unknown"}
+  - projectId={projectId}, restIssueId={restIssueId}, issueKey={issueKey}, vulnerabilityId={vulnerabilityId | "unknown"}, purl={purl}, packageName={packageName}, workspacePackage={workspacePackage | "unknown"}
 
   For issueType = code:
   - projectId={projectId}, restIssueId={restIssueId}, issueKey={issueKey}, filePath={filePath}, startLine={startLine}, endLine={endLine}, workspacePackage={workspacePackage | "unknown"}
@@ -93,7 +94,9 @@ IMPORTANT:
   - Apply Gate [A] before making changes.
   - Use one representative issue instance with complete required fields for the first analysis call.
   - For `package_vulnerability`, prefer `packageName`; fall back to `purl` only when `packageName` is missing or `unknown`.
+  - If `vulnerabilityId` is present for `package_vulnerability`, use it only for advisory coverage checks such as `overrides.py analyze --snyk-id`; do not treat it as a substitute for `packageName` or `purl`.
   - If `temp-override` is under consideration, consult `overrides.py analyze` before choosing the strategy.
+  - If `temp-override` is chosen, the handback must include the resulting pre-flight evidence as `implementation.overridePreflight`.
   - `workspacePackage` is only a scope hint; do not use it as package identity or resolver selection input.
   - Do not do extra issue discovery before the resolver starts.
   - For `blocked`, return `remediationProposal` and `rationale`.
@@ -111,6 +114,7 @@ IMPORTANT:
   - `issueKey`
   - `purl`
   - `packageName`
+- Include `vulnerabilityId` unchanged when one unambiguous value exists in seed context; otherwise keep it as `unknown` in the handoff.
 - Keep `packageName` and `purl` unchanged from seed or ledger context.
 - `workspacePackage` may be `unknown`, but must not be invented.
 - `AFFECTED WORKSPACE PACKAGES` may be empty.

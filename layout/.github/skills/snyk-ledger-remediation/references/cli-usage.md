@@ -17,7 +17,7 @@ Before using the script:
 
 If ledger JSON validation is needed, use:
 
-- `pnpm dlx ajv-cli validate --spec=draft2020 -s .github/skills/snyk-ledger-remediation/schemas/issues-ledger.schema.json -d .synk/{sessionId}/issues-ledger.json`
+- `pnpm dlx --package=ajv-cli --package=ajv-formats ajv validate -c ajv-formats --spec=draft2020 -s .github/skills/snyk-ledger-remediation/schemas/issues-ledger.schema.json -d .synk/{sessionId}/issues-ledger.json`
 
 AJV validates the persisted JSON contract. `ledger.py` remains the canonical owner of selection, update, and failure logic.
 
@@ -40,6 +40,21 @@ Optional operator overview:
 - `python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py update --ledger .synk/{sessionId}/issues-ledger.json --key <advisoryKey> --from-handback -`
 
 Use stdin-first handback transfer by default. Use `--from-handback <path>` only when a real operational file already exists.
+
+If inline handback construction is used for operational tooling, include at minimum:
+
+- `--issue-type <package_vulnerability|code>`
+- `--status <...>`
+- all required fields for that issue type and status according to `handback-format.md`
+
+If inline handback construction is used for operational tooling, `temp-override` handbacks must carry both:
+
+- `--overrides <JSON>` for `implementation.overridesApplied`
+- `--override-preflight <JSON>` for `implementation.overridePreflight`
+
+Example pre-flight payload:
+
+- `--override-preflight '{"materializationPresent":true,"queryPackage":"esbuild","matchingCaseKeys":["esbuild-active"],"selectorConflict":"exact-selector","disposition":"reuse-existing-case"}'`
 
 ### Persist parse or format failure
 

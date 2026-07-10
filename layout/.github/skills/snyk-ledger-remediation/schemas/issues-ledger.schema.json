@@ -30,6 +30,34 @@
       "type": "string",
       "enum": ["pass", "fail", "not-run"]
     },
+    "overridePreflight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "materializationPresent",
+        "queryPackage",
+        "matchingCaseKeys",
+        "selectorConflict",
+        "disposition"
+      ],
+      "properties": {
+        "materializationPresent": { "type": "boolean" },
+        "queryPackage": { "type": "string", "minLength": 1 },
+        "matchingCaseKeys": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "selectorConflict": {
+          "type": "string",
+          "enum": ["none", "exact-selector", "same-package"]
+        },
+        "disposition": {
+          "type": "string",
+          "enum": ["reuse-existing-case", "create-new-case"]
+        }
+      }
+    },
     "implementation": {
       "type": "object",
       "additionalProperties": false,
@@ -48,7 +76,11 @@
         },
         "overridesApplied": {
           "type": "array",
-          "items": { "type": "string", "minLength": 1 }
+          "items": { "type": "string", "minLength": 1 },
+          "minItems": 1
+        },
+        "overridePreflight": {
+          "$ref": "#/$defs/overridePreflight"
         }
       }
     },
@@ -164,6 +196,276 @@
           "then": {
             "properties": {
               "packageName": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "issueType": { "const": "code" }
+            },
+            "required": ["issueType"]
+          },
+          "then": {
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": ["not-started", "in-progress", "resolved", "blocked"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "issueType": { "const": "package_vulnerability" },
+              "status": { "enum": ["resolved", "blocked", "partially-resolved"] }
+            },
+            "required": ["issueType", "status"]
+          },
+          "then": {
+            "required": [
+              "vulnerablePackage",
+              "vulnerableVersions",
+              "targetVersion",
+              "strategy",
+              "riskLevel",
+              "complexity",
+              "implementation",
+              "verification",
+              "outcome"
+            ],
+            "properties": {
+              "vulnerableVersions": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 },
+                "minItems": 1
+              },
+              "complexity": {
+                "type": "string",
+                "enum": ["contained", "architectural"]
+              },
+              "implementation": {
+                "type": "object",
+                "required": ["filesChanged"]
+              },
+              "verification": {
+                "type": "object",
+                "required": ["dependencyCheck", "lint", "typecheck", "tests", "build"]
+              },
+              "outcome": {
+                "type": "object",
+                "required": ["result", "summary"]
+              }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["filePath"] },
+                { "required": ["lineRange"] },
+                { "required": ["cweId"] }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "issueType": { "const": "package_vulnerability" },
+              "status": { "const": "resolved" }
+            },
+            "required": ["issueType", "status"]
+          },
+          "then": {
+            "properties": {
+              "verification": {
+                "type": "object",
+                "properties": {
+                  "dependencyCheck": { "const": "pass" }
+                }
+              },
+              "outcome": {
+                "type": "object",
+                "properties": {
+                  "result": { "const": "resolved" }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "issueType": { "const": "package_vulnerability" },
+              "status": { "const": "blocked" }
+            },
+            "required": ["issueType", "status"]
+          },
+          "then": {
+            "properties": {
+              "outcome": {
+                "type": "object",
+                "required": ["result", "summary", "blockers", "remediationProposal", "rationale"],
+                "properties": {
+                  "result": { "const": "blocked" },
+                  "blockers": {
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1 },
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "issueType": { "const": "package_vulnerability" },
+              "status": { "const": "partially-resolved" }
+            },
+            "required": ["issueType", "status"]
+          },
+          "then": {
+            "properties": {
+              "outcome": {
+                "type": "object",
+                "required": ["result", "summary", "blockers", "remediationProposal", "rationale"],
+                "properties": {
+                  "result": { "const": "partially-resolved" },
+                  "blockers": {
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1 },
+                    "minItems": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "strategy": { "const": "temp-override" } },
+            "required": ["strategy"]
+          },
+          "then": {
+            "required": ["implementation"],
+            "properties": {
+              "implementation": {
+                "type": "object",
+                "required": ["overridesApplied", "overridePreflight"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "issueType": { "const": "code" },
+              "status": { "const": "resolved" }
+            },
+            "required": ["issueType", "status"]
+          },
+          "then": {
+            "required": [
+              "filePath",
+              "lineRange",
+              "cweId",
+              "severity",
+              "complexity",
+              "implementation",
+              "verification",
+              "outcome"
+            ],
+            "properties": {
+              "complexity": {
+                "type": "string",
+                "enum": ["trivial", "contained"]
+              },
+              "implementation": {
+                "type": "object",
+                "required": ["filesChanged"]
+              },
+              "verification": {
+                "type": "object",
+                "required": ["lint", "typecheck", "tests"]
+              },
+              "outcome": {
+                "type": "object",
+                "required": ["result", "summary"],
+                "properties": {
+                  "result": { "const": "resolved" }
+                }
+              }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["vulnerablePackage"] },
+                { "required": ["vulnerableVersions"] },
+                { "required": ["targetVersion"] },
+                { "required": ["strategy"] },
+                { "required": ["riskLevel"] },
+                {
+                  "type": "object",
+                  "properties": {
+                    "verification": {
+                      "type": "object",
+                      "anyOf": [
+                        { "type": "object", "required": ["dependencyCheck"] },
+                        { "type": "object", "required": ["build"] }
+                      ]
+                    }
+                  },
+                  "required": ["verification"]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "issueType": { "const": "code" },
+              "status": { "const": "blocked" }
+            },
+            "required": ["issueType", "status"]
+          },
+          "then": {
+            "required": [
+              "filePath",
+              "lineRange",
+              "cweId",
+              "severity",
+              "complexity",
+              "outcome"
+            ],
+            "properties": {
+              "complexity": {
+                "type": "string",
+                "enum": ["false-positive", "architectural"]
+              },
+              "outcome": {
+                "type": "object",
+                "required": ["result", "summary", "blockers", "remediationProposal", "rationale"],
+                "properties": {
+                  "result": { "const": "blocked" },
+                  "blockers": {
+                    "type": "array",
+                    "items": { "type": "string", "minLength": 1 },
+                    "minItems": 1
+                  }
+                }
+              }
+            },
+            "not": {
+              "anyOf": [
+                { "required": ["vulnerablePackage"] },
+                { "required": ["vulnerableVersions"] },
+                { "required": ["targetVersion"] },
+                { "required": ["strategy"] },
+                { "required": ["riskLevel"] },
+                { "required": ["implementation"] },
+                { "required": ["verification"] }
+              ]
             }
           }
         }

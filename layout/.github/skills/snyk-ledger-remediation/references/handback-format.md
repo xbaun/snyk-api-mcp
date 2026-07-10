@@ -75,6 +75,34 @@ If present, use exactly these names:
 - `dependencyUpdates`
 - `parentUpdates`
 - `overridesApplied`
+- `overridePreflight`
+
+### `implementation.overridePreflight`
+
+When present, `implementation.overridePreflight` must use exactly this shape:
+
+```json
+{
+  "materializationPresent": true,
+  "queryPackage": "string",
+  "matchingCaseKeys": ["string"],
+  "selectorConflict": "none | exact-selector | same-package",
+  "disposition": "reuse-existing-case | create-new-case"
+}
+```
+
+Field semantics:
+
+- `materializationPresent` = whether `snyk-dep-overrides.pnpm.json` existed before the resolver write path
+- `queryPackage` = package name used for the canonical `overrides.py analyze` pre-flight
+- `matchingCaseKeys` = concrete case keys returned as relevant matches for that package-level pre-flight; use `[]` when no relevant case existed
+- `selectorConflict` = normalized selector conflict outcome from the analyze result; use `none` when no relevant selector conflict was reported
+- `disposition` = whether the resolver reused an existing override case or created a new one
+
+Scope note:
+
+- `implementation.overridePreflight` is package/selector-scoped evidence for the required `overrides.py analyze` pre-flight.
+- It is not a substitute for advisory-specific Snyk-ID coverage checks when a real vulnerability ID is available.
 
 ### Field semantics
 
@@ -102,6 +130,8 @@ If present, use exactly these names:
   - `remediationProposal`
   - `rationale`
 - If `strategy = temp-override`, `implementation.overridesApplied` should not be empty.
+- If `strategy = temp-override`, `implementation.overridePreflight` must be present and must reflect the actual `overrides.py analyze` result that informed the resolver decision.
+- If `strategy = temp-override` and the analyze result exposed an active matching case or an `exact-selector` conflict, the resolver must reuse or update that case instead of creating a duplicate override entry.
 
 ---
 
@@ -185,4 +215,5 @@ The coordinator must at least verify:
 4. Are all required fields present?
 5. Are `blocked` or `partially-resolved` responses fully justified?
 6. Is dep `resolved` claimed only when `dependencyCheck = pass`?
-7. Are there no `null` values?
+7. If `strategy = temp-override`, is `implementation.overridePreflight` present and internally consistent with `implementation.overridesApplied`?
+8. Are there no `null` values?

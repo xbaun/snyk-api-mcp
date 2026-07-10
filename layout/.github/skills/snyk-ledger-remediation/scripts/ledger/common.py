@@ -8,7 +8,9 @@ from pathlib import Path
 from typing import Any
 
 LEDGER_SCHEMA_PATH = '../../.github/skills/snyk-ledger-remediation/schemas/issues-ledger.schema.json'
-SEED_SCHEMA_PATH = '../../.github/skills/snyk-session-init/schemas/issues-ledger-seed.schema.json'
+TARGET_SEED_SCHEMA_PATH = '../../.github/skills/snyk-session-init/schemas/issues-ledger-seed.schema.json'
+PROJECT_SEED_SCHEMA_PATH = '../../.github/skills/snyk-session-init/schemas/project-issues-ledger-seed.schema.json'
+SEED_SCHEMA_PATHS = frozenset({TARGET_SEED_SCHEMA_PATH, PROJECT_SEED_SCHEMA_PATH})
 SEVERITY_ORDER = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3}
 ISSUE_TYPE_ORDER = {'package_vulnerability': 0, 'code': 1}
 STATUS_ORDER = ('not-started', 'in-progress', 'resolved', 'blocked', 'partially-resolved')
@@ -24,7 +26,7 @@ ALLOWED_FAILURE_KIND = {
 }
 ALLOWED_SEVERITY = set(SEVERITY_ORDER)
 ALLOWED_ISSUE_TYPE = set(ISSUE_TYPE_ORDER)
-SEED_TOP_LEVEL_REQUIRED = ['query', 'target', 'collection', 'issues', 'advisories']
+SEED_TOP_LEVEL_REQUIRED = ['$schema', 'query', 'collection', 'issues', 'advisories']
 ISSUE_TYPE_ORDERED = tuple(sorted(ISSUE_TYPE_ORDER, key=ISSUE_TYPE_ORDER.get))
 SEVERITY_ORDERED = tuple(sorted(SEVERITY_ORDER, key=SEVERITY_ORDER.get))
 
@@ -201,6 +203,18 @@ def parse_json_array(raw: str | None, field_name: str) -> list[Any]:
         raise LedgerError(f"Field '{field_name}' must be valid JSON.") from exc
     if not isinstance(value, list):
         raise LedgerError(f"Field '{field_name}' must be a JSON array.")
+    return value
+
+
+def parse_json_object(raw: str | None, field_name: str) -> dict[str, Any]:
+    if raw is None:
+        return {}
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise LedgerError(f"Field '{field_name}' must be valid JSON.") from exc
+    if not isinstance(value, dict):
+        raise LedgerError(f"Field '{field_name}' must be a JSON object.")
     return value
 
 

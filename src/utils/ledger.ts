@@ -159,6 +159,7 @@ export interface LedgerIssue {
   projectId: string;
   projectName: string;
   workspacePackage?: string;
+  vulnerabilityId?: string;
   packageName?: string;
   purl?: string;
   filePath?: string;
@@ -325,7 +326,17 @@ export function dedupeLedgerIssues(issues: LedgerIssue[]): LedgerIssue[] {
 export function extractPackageIdentityFromIssue(
   item: RestIssue,
   projectType: string,
-): Pick<LedgerIssue, 'packageName' | 'purl'> {
+): Pick<LedgerIssue, 'packageName' | 'purl' | 'vulnerabilityId'> {
+  const vulnerabilityIds = [
+    ...new Set(
+      (item.attributes.problems ?? [])
+        .filter((problem) => problem.type === 'vulnerability')
+        .map((problem) =>
+          typeof problem.id === 'string' ? problem.id.trim() : '',
+        )
+        .filter(Boolean),
+    ),
+  ];
   const coordinates = item.attributes.coordinates ?? [];
 
   for (const coord of coordinates) {
@@ -338,13 +349,18 @@ export function extractPackageIdentityFromIssue(
       const purl = buildPackagePurl(projectType, packageName, packageVersion);
 
       return {
+        ...(vulnerabilityIds.length === 1
+          ? { vulnerabilityId: vulnerabilityIds[0] }
+          : {}),
         ...(packageName ? { packageName } : {}),
         ...(purl ? { purl } : {}),
       };
     }
   }
 
-  return {};
+  return vulnerabilityIds.length === 1
+    ? { vulnerabilityId: vulnerabilityIds[0] }
+    : {};
 }
 
 // ---------------------------------------------------------------------------

@@ -88,6 +88,7 @@ def resolved_detail(advisory: dict[str, Any]) -> dict[str, Any]:
             'dependencyUpdates': implementation.get('dependencyUpdates') if isinstance(implementation, dict) else None,
             'parentUpdates': implementation.get('parentUpdates') if isinstance(implementation, dict) else None,
             'overridesApplied': implementation.get('overridesApplied') if isinstance(implementation, dict) else None,
+            'overridePreflight': implementation.get('overridePreflight') if isinstance(implementation, dict) else None,
             'verification': advisory.get('verification'),
         }
     )
@@ -123,6 +124,7 @@ def partial_detail(advisory: dict[str, Any]) -> dict[str, Any]:
             'dependencyUpdates': implementation.get('dependencyUpdates') if isinstance(implementation, dict) else None,
             'parentUpdates': implementation.get('parentUpdates') if isinstance(implementation, dict) else None,
             'overridesApplied': implementation.get('overridesApplied') if isinstance(implementation, dict) else None,
+            'overridePreflight': implementation.get('overridePreflight') if isinstance(implementation, dict) else None,
             'verification': advisory.get('verification'),
             'remediationProposal': outcome.get('remediationProposal') if isinstance(outcome, dict) else None,
             'rationale': outcome.get('rationale') if isinstance(outcome, dict) else None,

@@ -9,8 +9,10 @@ from .common import (
     ALLOWED_SEVERITY,
     LedgerError,
     LEDGER_SCHEMA_PATH,
-    SEED_SCHEMA_PATH,
+    PROJECT_SEED_SCHEMA_PATH,
+    SEED_SCHEMA_PATHS,
     SEED_TOP_LEVEL_REQUIRED,
+    TARGET_SEED_SCHEMA_PATH,
     load_json,
     print_json,
     require_list,
@@ -49,6 +51,8 @@ INIT_LEDGER_FIELDS = [
     'createdAt',
     'packageName',
 ]
+
+ALLOWED_PROJECT_KIND = {'package', 'code', 'container', 'unknown'}
 
 
 def normalize_seed_advisory(raw: dict[str, Any]) -> dict[str, Any]:
@@ -110,10 +114,18 @@ def normalize_seed_advisory(raw: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def validate_seed_query(query: Any) -> None:
+def validate_seed_query(query: Any, *, scope: str) -> None:
     query_obj = require_object(query, 'query')
     require_non_empty_string(query_obj.get('orgId'), 'query.orgId')
-    require_non_empty_string(query_obj.get('targetId'), 'query.targetId')
+
+    if scope == 'target':
+        require_non_empty_string(query_obj.get('targetId'), 'query.targetId')
+        if 'projectId' in query_obj:
+            raise LedgerError("Field 'query.projectId' is not allowed for target-scoped seeds.")
+    else:
+        require_non_empty_string(query_obj.get('projectId'), 'query.projectId')
+        if 'targetId' in query_obj:
+            raise LedgerError("Field 'query.targetId' is not allowed for project-scoped seeds.")
 
     if query_obj.get('status') != 'open':
         raise LedgerError("Field 'query.status' must be 'open'.")
@@ -131,6 +143,27 @@ def validate_seed_target(target: Any) -> None:
     display_name = target_obj.get('displayName')
     if display_name is not None and not isinstance(display_name, str):
         raise LedgerError("Field 'target.displayName' must be a string or null.")
+
+
+def validate_seed_project(project: Any) -> None:
+    project_obj = require_object(project, 'project')
+    require_non_empty_string(project_obj.get('id'), 'project.id')
+    require_non_empty_string(project_obj.get('name'), 'project.name')
+    require_non_empty_string(project_obj.get('type'), 'project.type')
+
+    kind = require_non_empty_string(project_obj.get('kind'), 'project.kind')
+    if kind not in ALLOWED_PROJECT_KIND:
+        raise LedgerError(
+            "Field 'project.kind' must be one of: package, code, container, unknown."
+        )
+
+    target_id = project_obj.get('targetId')
+    if target_id is not None and not isinstance(target_id, str):
+        raise LedgerError("Field 'project.targetId' must be a string or null.")
+
+    workspace_package = project_obj.get('workspacePackage')
+    if workspace_package is not None and not isinstance(workspace_package, str):
+        raise LedgerError("Field 'project.workspacePackage' must be a string or null.")
 
 
 def validate_seed_collection(collection: Any) -> None:
@@ -184,6 +217,9 @@ def validate_seed_issue(issue: Any, index: int) -> None:
         )
 
     if issue_type == 'package_vulnerability':
+        vulnerability_id = issue_obj.get('vulnerabilityId')
+        if vulnerability_id is not None:
+            require_non_empty_string(vulnerability_id, f'issues[{index}].vulnerabilityId')
         require_non_empty_string(issue_obj.get('purl'), f'issues[{index}].purl')
         require_non_empty_string(issue_obj.get('packageName'), f'issues[{index}].packageName')
 
@@ -194,12 +230,6 @@ def validate_seed_issue(issue: Any, index: int) -> None:
 
 
 def validate_seed_document(seed: dict[str, Any]) -> None:
-    schema_ref = seed.get('$schema')
-    if schema_ref is not None and schema_ref != SEED_SCHEMA_PATH:
-        raise LedgerError(
-            f"Seed document has unexpected $schema '{schema_ref}'. Expected '{SEED_SCHEMA_PATH}'."
-        )
-
     missing = [field for field in SEED_TOP_LEVEL_REQUIRED if field not in seed]
     if missing:
         raise LedgerError(
@@ -207,8 +237,32 @@ def validate_seed_document(seed: dict[str, Any]) -> None:
             "Canonical issues-ledger seeds must contain both issues[] and advisories[]; ledger.py init materializes from advisories[] and does not expect local regrouping."
         )
 
-    validate_seed_query(seed.get('query'))
-    validate_seed_target(seed.get('target'))
+    has_target = 'target' in seed
+    has_project = 'project' in seed
+    if has_target == has_project:
+        raise LedgerError(
+            "Seed document must contain exactly one scope object: top-level 'target' or 'project'."
+        )
+
+    schema_ref = seed.get('$schema')
+    if schema_ref is not None and schema_ref not in SEED_SCHEMA_PATHS:
+        expected = ', '.join(sorted(SEED_SCHEMA_PATHS))
+        raise LedgerError(
+            f"Seed document has unexpected $schema '{schema_ref}'. Expected one of: {expected}."
+        )
+
+    scope = 'target' if has_target else 'project'
+    expected_schema = TARGET_SEED_SCHEMA_PATH if scope == 'target' else PROJECT_SEED_SCHEMA_PATH
+    if schema_ref is not None and schema_ref != expected_schema:
+        raise LedgerError(
+            f"Seed document scope '{scope}' requires $schema '{expected_schema}', got '{schema_ref}'."
+        )
+
+    validate_seed_query(seed.get('query'), scope=scope)
+    if scope == 'target':
+        validate_seed_target(seed.get('target'))
+    else:
+        validate_seed_project(seed.get('project'))
     validate_seed_collection(seed.get('collection'))
 
     issues = require_list(seed.get('issues'), 'issues')
