@@ -28,6 +28,10 @@
   },
   "keywords": [],
   "author": "",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xbaun/snyk-api-mcp.git"
+  },
   "license": "ISC",
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
