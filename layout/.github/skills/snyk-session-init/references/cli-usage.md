@@ -10,8 +10,8 @@ Use it when an agent needs the concrete CLI flow for turning a seed document int
 
 Before initialization:
 
-- `python3 .github/skills/snyk-orchestration/scripts/ledger.py --help`
-- `python3 .github/skills/snyk-orchestration/scripts/ledger.py init --help`
+- `python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py --help`
+- `python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py init --help`
 
 ## Seed schema validation
 
@@ -27,7 +27,7 @@ AJV validates the seed contract. `ledger.py init` remains the canonical owner of
 
 ## Canonical materialization command
 
-- `python3 .github/skills/snyk-orchestration/scripts/ledger.py init --from .synk/{sessionId}/issues-ledger-seed.json --output .synk/{sessionId}/issues-ledger.json --session-id <sessionId>`
+- `python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py init --from .synk/{sessionId}/issues-ledger-seed.json --output .synk/{sessionId}/issues-ledger.json --session-id <sessionId>`
 
 ## Usage rules
 

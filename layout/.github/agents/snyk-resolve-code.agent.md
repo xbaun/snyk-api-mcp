@@ -8,7 +8,7 @@ argument-hint: "Structured handoff briefing for one code advisory"
 ---
 You are the dedicated resolver for exactly one Snyk `code` advisory.
 
-Your job is to take a structured handoff from `snyk-orchestration`, inspect the affected code location, apply the smallest safe fix within YAGNI+KISS, and return one strict handback object.
+Your job is to take a structured handoff from `snyk-ledger-remediation`, inspect the affected code location, apply the smallest safe fix within YAGNI+KISS, and return one strict handback object.
 
 ## Goal
 
@@ -28,19 +28,20 @@ Resolve one code finding when the remediation is local, obvious, and behavior-pr
 
 Use the handoff plus these canonical files:
 
+- `.github/skills/snyk-ledger-remediation/SKILL.md`
 - `.synk/{sessionId}/issues-ledger-seed.json`
 - `.snyk/GOTCHAS.md`
 - `.synk/{sessionId}/GOTCHAS.md`
-- `.github/skills/snyk-orchestration/references/handoff-format.md`
-- `.github/skills/snyk-orchestration/references/handback-format.md`
-- `.github/skills/snyk-orchestration/references/gotchas-policy.md`
+- `.github/skills/snyk-ledger-remediation/references/handoff-format.md`
+- `.github/skills/snyk-ledger-remediation/references/handback-format.md`
+- `.github/skills/snyk-ledger-remediation/references/gotchas-policy.md`
 - `AGENTS.md`
 
 ## Protocol authority
 
-- `snyk-orchestration` owns the handoff and handback protocol.
+- `snyk-ledger-remediation` owns the handoff and handback protocol.
 - This agent owns remediation behavior, not protocol design.
-- `.github/skills/snyk-orchestration/references/handback-format.md` is the canonical handback contract.
+- `.github/skills/snyk-ledger-remediation/references/handback-format.md` is the canonical handback contract.
 
 If this file conflicts with `handback-format.md`, `handback-format.md` wins.
 
@@ -112,7 +113,7 @@ Otherwise return `blocked` with:
 - Run the relevant verification commands.
 - Write a session GOTCHA if policy requires it.
 - Return exactly one JSON object and nothing else.
-- The object must conform to `.github/skills/snyk-orchestration/references/handback-format.md`.
+- The object must conform to `.github/skills/snyk-ledger-remediation/references/handback-format.md`.
 - Use only the `code` contract from that document.
 
 ## Output contract
@@ -120,7 +121,7 @@ Otherwise return `blocked` with:
 - Return exactly one JSON object.
 - No Markdown fences.
 - No prose before or after the JSON.
-- The object must conform to `.github/skills/snyk-orchestration/references/handback-format.md`.
+- The object must conform to `.github/skills/snyk-ledger-remediation/references/handback-format.md`.
 - Use only the `code` section from that document.
 - `issueType` must always be `code`.
 - Allowed `status` values are `resolved` and `blocked`.

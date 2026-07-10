@@ -4,7 +4,7 @@
 
 This harness defines when and how a manager-specific override materialization may be maintained.
 
-It covers override decision support and materialization only. The final resolver handback remains a separate JSON object passed to `ledger.py update --from-handback -` by `snyk-orchestration`.
+It covers override decision support and materialization only. The final resolver handback remains a separate JSON object passed to `ledger.py update --from-handback -` by `snyk-ledger-remediation`.
 
 ## Decision rules
 

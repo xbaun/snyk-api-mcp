@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-LEDGER_SCHEMA_PATH = '../../.github/skills/snyk-orchestration/schemas/issues-ledger.schema.json'
+LEDGER_SCHEMA_PATH = '../../.github/skills/snyk-ledger-remediation/schemas/issues-ledger.schema.json'
 SEED_SCHEMA_PATH = '../../.github/skills/snyk-session-init/schemas/issues-ledger-seed.schema.json'
 SEVERITY_ORDER = {'critical': 0, 'high': 1, 'medium': 2, 'low': 3}
 ISSUE_TYPE_ORDER = {'package_vulnerability': 0, 'code': 1}

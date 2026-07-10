@@ -9,6 +9,8 @@ Small, strict, agent-friendly MCP server for Snyk.
 
 It gives AI coding agents a **narrow and predictable** interface for common Snyk workflows: resolve an org, discover targets and projects, list issues, fetch issue detail, inspect dependency paths, and generate ledger seed documents for remediation loops.
 
+The bundled downstream layout also separates **ledger-based remediation** from later **override revalidation** work. See [docs/snyk-skill-topology.md](docs/snyk-skill-topology.md) for the current top-level skill structure.
+
 ## Why it is useful
 
 Most Snyk integrations are great for humans, but noisy for agents. This project keeps the surface area intentionally small:

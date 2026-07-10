@@ -1,13 +1,15 @@
 ---
-name: snyk-orchestration
-description: Orchestrate deterministic advisory processing from `issues-ledger.json`, including selection, dispatch, validation, and ledger updates.
+name: snyk-ledger-remediation
+description: Drive deterministic ledger-based advisory remediation from `issues-ledger.json`, including selection, dispatch, validation, and ledger updates.
 ---
 
-# snyk-orchestration
+# snyk-ledger-remediation
 
 ## Purpose
 
 Process an existing `.synk/{sessionId}/issues-ledger.json` deterministically.
+
+This skill closes or documents advisory work items from the current ledger, including temporary dependency overrides when they are the smallest valid remediation.
 
 This skill owns:
 
@@ -25,7 +27,7 @@ Use it for an existing remediation session that must continue strictly from the 
 
 Typical triggers:
 
-- orchestrate Snyk remediation session
+- run Snyk ledger remediation session
 - continue issues-ledger loop
 - process next advisory from issues-ledger
 - validate resolver handback
@@ -44,10 +46,10 @@ Typical triggers:
 
 ## Script-first operation
 
-- Read `python3 .github/skills/snyk-orchestration/scripts/ledger.py --help` first.
-- Before using a subcommand, read `python3 .github/skills/snyk-orchestration/scripts/ledger.py <subcommand> --help`.
+- Read `python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py --help` first.
+- Before using a subcommand, read `python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py <subcommand> --help`.
 - If a `ledger.py` command exists for the task, do not reconstruct the logic from raw JSON.
-- If ledger JSON validation is needed, use `pnpm dlx ajv-cli validate --spec=draft2020 -s .github/skills/snyk-orchestration/schemas/issues-ledger.schema.json -d .synk/{sessionId}/issues-ledger.json`.
+- If ledger JSON validation is needed, use `pnpm dlx ajv-cli validate --spec=draft2020 -s .github/skills/snyk-ledger-remediation/schemas/issues-ledger.schema.json -d .synk/{sessionId}/issues-ledger.json`.
 - For the full command catalog for `select`, `analyze`, `set-status`, `update`, `record-failure`, and `cascade-check`, read `references/cli-usage.md`.
 
 ## Canonical references

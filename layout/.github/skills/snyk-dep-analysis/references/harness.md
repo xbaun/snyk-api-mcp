@@ -4,7 +4,7 @@
 
 This harness defines the only allowed read interface for compact dependency facts in resolver workflows.
 
-It covers fact gathering and verification only. The final resolver handback remains a separate JSON object sent to `ledger.py update --from-handback -` by `snyk-orchestration`.
+It covers fact gathering and verification only. The final resolver handback remains a separate JSON object sent to `ledger.py update --from-handback -` by `snyk-ledger-remediation`.
 
 ## Adapter model
 

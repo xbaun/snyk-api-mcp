@@ -36,15 +36,15 @@ Initialize a new `.synk/{sessionId}/` remediation session from one seed call and
 - `schemas/issues-ledger-seed.schema.json`
 - `schemas/project-issues-ledger-seed.schema.json`
 - `references/cli-usage.md`
-- `../snyk-orchestration/scripts/ledger.py`
-- `../snyk-orchestration/references/gotchas-policy.md`
+- `../snyk-ledger-remediation/scripts/ledger.py`
+- `../snyk-ledger-remediation/references/gotchas-policy.md`
 
 ## Script-first rules
 
 - Validate seed JSON with `pnpm dlx ajv-cli ... --spec=draft2020` when needed.
-- Read `python3 .github/skills/snyk-orchestration/scripts/ledger.py --help` first.
-- Before initialization, read `python3 .github/skills/snyk-orchestration/scripts/ledger.py init --help`.
-- Materialize only through `python3 .github/skills/snyk-orchestration/scripts/ledger.py init --from .synk/{sessionId}/issues-ledger-seed.json --output .synk/{sessionId}/issues-ledger.json --session-id <sessionId>`.
+- Read `python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py --help` first.
+- Before initialization, read `python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py init --help`.
+- Materialize only through `python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py init --from .synk/{sessionId}/issues-ledger-seed.json --output .synk/{sessionId}/issues-ledger.json --session-id <sessionId>`.
 - For the full validation and `ledger.py init` command patterns, read `references/cli-usage.md`.
 
 ## Sequence
@@ -66,4 +66,4 @@ Initialize a new `.synk/{sessionId}/` remediation session from one seed call and
 - Never reinterpret scope heuristically: `targetId` stays target-scoped, `projectId` stays project-scoped.
 - `issues-ledger-seed.json` is the only input artifact for `ledger.py init`.
 - `snyk-session-init` owns only GOTCHAS file creation, not later curation.
-- GOTCHAS structure must follow `../snyk-orchestration/references/gotchas-policy.md`.
+- GOTCHAS structure must follow `../snyk-ledger-remediation/references/gotchas-policy.md`.

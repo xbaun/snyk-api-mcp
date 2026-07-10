@@ -1,8 +1,8 @@
-# snyk-orchestration workflow
+# snyk-ledger-remediation workflow
 
 ## Purpose
 
-This workflow is normative. `snyk-orchestration` must follow it exactly.
+This workflow is normative. `snyk-ledger-remediation` must follow it exactly.
 
 ## Normative sequence
 
@@ -86,6 +86,6 @@ There is no fourth semantic end state.
 
 - `snyk-session-init` creates the files.
 - Resolvers append advisory-specific learnings only to `.synk/{sessionId}/GOTCHAS.md`.
-- `snyk-orchestration` may also append orchestration notes there.
-- Only `snyk-orchestration` promotes durable rules to `.snyk/GOTCHAS.md`.
+- `snyk-ledger-remediation` may also append coordination notes there.
+- Only `snyk-ledger-remediation` promotes durable rules to `.snyk/GOTCHAS.md`.
 - Resume and failure state must also be persisted in the ledger.

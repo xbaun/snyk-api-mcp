@@ -40,21 +40,21 @@ def build_parser() -> argparse.ArgumentParser:
               6. `record-failure` persist resume/failure relevant metadata
               7. `cascade-check`  inspect/apply package vulnerability cascades
 
-            Important: `next` is a read-only inspection helper. Orchestrators should prefer
+            Important: `next` is a read-only inspection helper. Coordinators should prefer
             `select`, because only `select` understands resume + dirty-stop semantics.
             """
         ),
         epilog=dedent(
             """
             Quick start:
-              python3 .github/skills/snyk-orchestration/scripts/ledger.py --help
-              python3 .github/skills/snyk-orchestration/scripts/ledger.py select --help
-              python3 .github/skills/snyk-orchestration/scripts/ledger.py analyze --help
-              python3 .github/skills/snyk-orchestration/scripts/ledger.py update --help
+              python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py --help
+              python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py select --help
+              python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py analyze --help
+              python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py update --help
 
             Most common commands in practice:
               init     Create `.synk/{sessionId}/issues-ledger.json` from a canonical seed.
-              select   Primary Gate [O1] entrypoint for orchestration loops.
+              select   Primary Gate [O1] entrypoint for ledger-remediation loops.
               analyze  Read-only status/progress report for the current ledger.
               update   Primary write path for validated resolver results.
             """
@@ -80,7 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=dedent(
             """
             Example:
-              python3 .github/skills/snyk-orchestration/scripts/ledger.py init \
+              python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py init \
                 --from .synk/2026-07-09T120000Z/issues-ledger-seed.json \
                 --output .synk/2026-07-09T120000Z/issues-ledger.json \
                 --session-id 2026-07-09T120000Z
@@ -120,16 +120,16 @@ def build_parser() -> argparse.ArgumentParser:
             This command is useful for debugging or quick inspection. It does not perform
             resume detection and does not know about repo dirtiness.
 
-            For real orchestration loops, prefer `select`.
+            For real ledger-remediation loops, prefer `select`.
             """
         ),
         epilog=dedent(
             """
             Examples:
-              python3 .github/skills/snyk-orchestration/scripts/ledger.py next \
+              python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py next \
                 --from .synk/{sessionId}/issues-ledger.json
 
-              python3 .github/skills/snyk-orchestration/scripts/ledger.py next \
+              python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py next \
                 --from .synk/{sessionId}/issues-ledger.json \
                 --format json
             """
@@ -173,12 +173,12 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=dedent(
             """
             Examples:
-              python3 .github/skills/snyk-orchestration/scripts/ledger.py select \
+              python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py select \
                 --ledger .synk/{sessionId}/issues-ledger.json \
                 --repo-root . \
                 --format json
 
-              python3 .github/skills/snyk-orchestration/scripts/ledger.py select \
+              python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py select \
                 --ledger .synk/{sessionId}/issues-ledger.json
             """
         ),
@@ -188,7 +188,7 @@ def build_parser() -> argparse.ArgumentParser:
         '--ledger',
         required=True,
         metavar='PATH',
-        help='Path to the session `issues-ledger.json` that drives orchestration state.',
+        help='Path to the session `issues-ledger.json` that drives remediation state.',
     )
     select_parser.add_argument(
         '--repo-root',
@@ -224,10 +224,10 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=dedent(
             """
             Examples:
-              python3 .github/skills/snyk-orchestration/scripts/ledger.py analyze \
+              python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py analyze \
                 --ledger .synk/{sessionId}/issues-ledger.json
 
-              python3 .github/skills/snyk-orchestration/scripts/ledger.py analyze \
+              python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py analyze \
                 --ledger .synk/{sessionId}/issues-ledger.json \
                 --format text
             """
@@ -274,13 +274,13 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=dedent(
             """
             Examples:
-              python3 .github/skills/snyk-orchestration/scripts/ledger.py cascade-check \
+              python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py cascade-check \
                 --ledger .synk/{sessionId}/issues-ledger.json \
                 --resolved-key SNYK-JS-FOO-123 \
                 --package foo \
                 --dry-run
 
-              python3 .github/skills/snyk-orchestration/scripts/ledger.py cascade-check \
+              python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py cascade-check \
                 --ledger .synk/{sessionId}/issues-ledger.json \
                 --resolved-key SNYK-JS-FOO-123 \
                 --package foo \
@@ -316,7 +316,7 @@ def build_parser() -> argparse.ArgumentParser:
     cascade_mode.add_argument(
         '--dry-run',
         action='store_true',
-        help='Explicit no-write mode for readability in orchestration logs.',
+        help='Explicit no-write mode for readability in run logs.',
     )
     cascade_parser.set_defaults(func=cmd_cascade_check)
 
@@ -349,17 +349,17 @@ def build_parser() -> argparse.ArgumentParser:
             """
             Examples:
               cat .synk/{sessionId}/handback.json |
-                python3 .github/skills/snyk-orchestration/scripts/ledger.py update \
+                                python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py update \
                   --ledger .synk/{sessionId}/issues-ledger.json \
                   --key SNYK-JS-FOO-123 \
                   --from-handback -
 
-              python3 .github/skills/snyk-orchestration/scripts/ledger.py update \
+                            python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py update \
                 --ledger .synk/{sessionId}/issues-ledger.json \
                 --key SNYK-JS-FOO-123 \
                 --from-handback .synk/{sessionId}/handback.json
 
-              python3 .github/skills/snyk-orchestration/scripts/ledger.py update \
+                            python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py update \
                 --ledger .synk/{sessionId}/issues-ledger.json \
                 --key SNYK-CODE-BAR-456 \
                 --issue-type code \
@@ -486,7 +486,7 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=dedent(
             """
             Example:
-              python3 .github/skills/snyk-orchestration/scripts/ledger.py record-failure \
+              python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py record-failure \
                 --ledger .synk/{sessionId}/issues-ledger.json \
                 --key SNYK-JS-FOO-123 \
                 --kind handback-format \
@@ -524,7 +524,7 @@ def build_parser() -> argparse.ArgumentParser:
             """
             Set the status of one advisory and maintain runtime timestamps.
 
-            Most orchestrator runs use this to mark an advisory as `in-progress` before
+            Most runs use this to mark an advisory as `in-progress` before
             resolver dispatch. Final advisory results should usually be written through
             `update`, because `update` also persists implementation/verification/outcome fields.
             """
@@ -532,12 +532,12 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=dedent(
             """
             Examples:
-              python3 .github/skills/snyk-orchestration/scripts/ledger.py set-status \
+              python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py set-status \
                 --ledger .synk/{sessionId}/issues-ledger.json \
                 --key SNYK-JS-FOO-123 \
                 --status in-progress
 
-              python3 .github/skills/snyk-orchestration/scripts/ledger.py set-status \
+              python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py set-status \
                 --ledger .synk/{sessionId}/issues-ledger.json \
                 --key SNYK-JS-FOO-123 \
                 --status blocked

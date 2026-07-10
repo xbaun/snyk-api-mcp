@@ -1,4 +1,4 @@
-# snyk-orchestration GOTCHAS policy
+# snyk-ledger-remediation GOTCHAS policy
 
 ## Purpose
 
@@ -9,19 +9,19 @@ This policy defines who creates, writes, curates, and promotes `.snyk/GOTCHAS.md
 ### `.snyk/GOTCHAS.md`
 
 - Type: permanent, repo-wide, cross-session lessons
-- Owner: `snyk-orchestration`
-- Write access: `snyk-orchestration` only
+- Owner: `snyk-ledger-remediation`
+- Write access: `snyk-ledger-remediation` only
 - Resolvers (`snyk-resolve-dep`, `snyk-resolve-code`) must never edit this file directly
 
 ### `.synk/{sessionId}/GOTCHAS.md`
 
 - Type: session-specific work notes and learnings
-- Owner: the session run under `snyk-orchestration`
+- Owner: the session run under `snyk-ledger-remediation`
 - Initial creation: `snyk-session-init`
 - Write access:
   - `snyk-resolve-dep` → advisory-specific dependency learnings
   - `snyk-resolve-code` → advisory-specific code or false-positive learnings
-  - `snyk-orchestration` → loop, resume, failure, or cascade learnings
+  - `snyk-ledger-remediation` → loop, resume, failure, or cascade learnings
 
 ## Write duties
 
@@ -49,7 +49,7 @@ Before returning the final handback, it must append an entry to `.synk/{sessionI
 - `complexity == false-positive`
 - a repo-specific sanitization, validation, or verification pattern changed the remediation path in a way future advisories should know
 
-### `snyk-orchestration`
+### `snyk-ledger-remediation`
 
 It must:
 
@@ -79,10 +79,10 @@ Each entry in `.synk/{sessionId}/GOTCHAS.md` must use this format:
 
 ```markdown
 ## {advisoryKey} — {short title}
-- owner: snyk-resolve-dep | snyk-resolve-code | snyk-orchestration
+- owner: snyk-resolve-dep | snyk-resolve-code | snyk-ledger-remediation
 - status: resolved | blocked | partially-resolved | operational
 - promote: yes | no
-- category: dependency | override | code | verification | orchestration
+- category: dependency | override | code | verification | coordination
 - lesson: {concrete observation or rule}
 - evidence:
   - {file, command, or observation}
@@ -96,7 +96,7 @@ Each entry in `.snyk/GOTCHAS.md` must use this format:
 
 ```markdown
 ## {stable short rule title}
-- promoted-by: snyk-orchestration
+- promoted-by: snyk-ledger-remediation
 - source-session: {sessionId}
 - applies-when: {situation / trigger}
 - rule: {durable action rule}
@@ -117,7 +117,7 @@ It must contain at least these headings:
 
 ## Advisory Learnings
 
-## Orchestrator Notes
+## Coordination Notes
 
 ## Promotion Candidates
 ```

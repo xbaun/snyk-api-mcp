@@ -1,4 +1,4 @@
-# snyk-orchestration gates
+# snyk-ledger-remediation gates
 
 ## Gate [O1] — Selection
 
@@ -13,7 +13,7 @@ Select exactly one advisory deterministically, or stop cleanly.
 
 ### Steps
 
-1. Run `python3 .github/skills/snyk-orchestration/scripts/ledger.py select --ledger .synk/{sessionId}/issues-ledger.json --repo-root . --format json`.
+1. Run `python3 .github/skills/snyk-ledger-remediation/scripts/ledger.py select --ledger .synk/{sessionId}/issues-ledger.json --repo-root . --format json`.
 2. Interpret only the returned `decision` field.
 3. Allowed decisions:
    - `resume` → resume the one advisory already in progress
@@ -260,7 +260,7 @@ Enforce GOTCHAS ownership, write duty, and promotion deterministically.
 ### Steps
 
 1. Check whether the resolver should have written a session GOTCHA under policy.
-2. If a loop, resume, failure, or cascade issue occurred, write an orchestration session GOTCHA.
+2. If a loop, resume, failure, or cascade issue occurred, write a ledger-remediation session GOTCHA.
 3. Review new session entries for promotion value.
 4. Promote only durable, repo-specific, reusable rules to `.snyk/GOTCHAS.md`.
 5. Deduplicate or update existing permanent rules instead of blindly appending duplicates.

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://xbaun.local/snyk-orchestration/issues-ledger.schema.json",
+  "$id": "https://xbaun.local/snyk-ledger-remediation/issues-ledger.schema.json",
   "title": "issues-ledger",
   "type": "object",
   "additionalProperties": false,

@@ -1,14 +1,14 @@
-# snyk-orchestration handback format
+# snyk-ledger-remediation handback format
 
 ## Purpose
 
-This document defines the only allowed return format from `snyk-resolve-dep` and `snyk-resolve-code` to `snyk-orchestration`.
+This document defines the only allowed return format from `snyk-resolve-dep` and `snyk-resolve-code` to `snyk-ledger-remediation`.
 
 ## Ownership
 
 This document is the single source of truth for the handback protocol.
 
-- `snyk-orchestration` validates against it.
+- `snyk-ledger-remediation` validates against it.
 - `snyk-resolve-dep` and `snyk-resolve-code` must not redefine it.
 - Agent files should point here instead of duplicating field lists or JSON shapes.
 
@@ -175,9 +175,9 @@ None.
 
 ---
 
-## Validation notes for the orchestrator
+## Validation notes for the coordinator
 
-The orchestrator must at least verify:
+The coordinator must at least verify:
 
 1. Is the payload valid JSON?
 2. Is `issueType` correct?

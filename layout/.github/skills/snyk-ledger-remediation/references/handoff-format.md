@@ -1,8 +1,8 @@
-# snyk-orchestration handoff format
+# snyk-ledger-remediation handoff format
 
 ## Purpose
 
-This is the only allowed structure for dispatch from `snyk-orchestration` to a resolver.
+This is the only allowed structure for dispatch from `snyk-ledger-remediation` to a resolver.
 
 ## Rules
 
@@ -72,9 +72,9 @@ For issueType = package_vulnerability only:
 
 CONTEXT FILES:
   - .synk/{sessionId}/issues-ledger-seed.json
-  - .snyk/GOTCHAS.md                  # read-only for resolvers; curated only by snyk-orchestration
+  - .snyk/GOTCHAS.md                  # read-only for resolvers; curated only by snyk-ledger-remediation
   - .synk/{sessionId}/GOTCHAS.md      # read + append for resolvers according to gotchas-policy
-  - .github/skills/snyk-orchestration/references/gotchas-policy.md
+  - .github/skills/snyk-ledger-remediation/references/gotchas-policy.md
   - AGENTS.md
 
   For issueType = package_vulnerability only:
