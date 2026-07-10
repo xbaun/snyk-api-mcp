@@ -39,9 +39,9 @@
     "provenance": true
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "catalog:",
-    "openapi-fetch": "catalog:",
-    "zod": "catalog:"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "openapi-fetch": "^0.17.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@commitlint/cli": "catalog:tooling",

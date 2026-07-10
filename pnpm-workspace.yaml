@@ -1,10 +1,5 @@
 packages: []
 
-catalog:
-  "@modelcontextprotocol/sdk": ^1.29.0
-  openapi-fetch: ^0.17.0
-  zod: ^4.4.3
-
 catalogs:
   eslint:
     "@eslint/js": ^10.0.1
